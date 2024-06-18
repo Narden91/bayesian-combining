@@ -1,5 +1,4 @@
-# template_python_project
-Blueprint for Python project
+# Bayesian Combining
 
 
 ## Prerequisites after first pull
