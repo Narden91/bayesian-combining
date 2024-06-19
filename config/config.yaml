@@ -12,6 +12,23 @@ hydra:
     dir: .
   output_subdir: null
 
+settings:
+  seed: 42
+  runs: 1
+  verbose: True
+
 paths:
-  source: ./source
-  output: ./output
+  source: data
+  output: output
+
+data:
+  type: ML # ML or DL
+  extension: csv
+  separator: ","
+  target: Label
+
+experiment:
+  train_size: 0.8
+  test_size: 0.2
+  val_size: 0.1
+
