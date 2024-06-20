@@ -82,7 +82,7 @@ def data_scaling(df: pd.DataFrame, id_column: str = 'Id',
     scaled_df = pd.DataFrame(scaled_columns, columns=columns_to_scale, index=df.index)
     scaled_df = pd.concat([df[[id_column]], scaled_df], axis=1)
 
-    logging.info(f"Data Scaled: \n {scaled_df}") if verbose else None
+    # logging.info(f"Data Scaled: \n {scaled_df}") if verbose else None
 
     return scaled_df, scaler
 
@@ -102,6 +102,6 @@ def apply_scaling(df: pd.DataFrame, scaler, id_column: str = 'Id', verbose: bool
     scaled_df = pd.DataFrame(scaled_columns, columns=columns_to_scale, index=df.index)
     scaled_df = pd.concat([df[[id_column]], scaled_df], axis=1)
 
-    logging.info(f"Data Scaled: \n {scaled_df}") if verbose else None
+    # logging.info(f"Data Scaled: \n {scaled_df}") if verbose else None
 
     return scaled_df
