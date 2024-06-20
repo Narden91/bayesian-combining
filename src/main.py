@@ -62,31 +62,47 @@ def main(cfg: DictConfig):
             X_test = test_df.drop(columns=cfg.data.target)
             y_test = test_df[cfg.data.target]
 
+            best_val_score = 0
+            best_model = None
+            scaler_opt = None
+
             # Cross-validation loop
             for fold in range(cfg.experiment.folds):
                 logging.info(f"Fold {fold + 1}") if verbose else None
                 # Split the data into train and validation sets
-                X_train, X_val, y_train, y_val = train_test_split(X_train, y_train,
-                                                                  test_size=cfg.experiment.val_size,
-                                                                  random_state=seed, stratify=y_train)
+                X_train_cv, X_val, y_train_cv, y_val = train_test_split(X_train, y_train,
+                                                                        test_size=cfg.experiment.val_size,
+                                                                        random_state=seed, stratify=y_train)
                 # Preprocess the data
                 if data_type == "ML":
                     logging.info("Task: Machine Learning") if verbose else None
-                    X_train = prep.data_scaling(X_train, cfg.data.id, cfg.scaling.type, verbose)
-                    X_val = prep.data_scaling(X_val, cfg.data.id, cfg.scaling.type, verbose)
+                    X_train_cv, scaler_cv = prep.data_scaling(X_train_cv, cfg.data.id, cfg.scaling.type, verbose)
+                    X_val = prep.apply_scaling(X_val, scaler_cv, cfg.data.id, verbose)
 
                 # Hyperparameter tuning using optuna
-                best_hyperparameters, best_model = hp.hyperparameter_tuning(cfg.model.name, X_train, y_train, X_val,
-                                                                            y_val, n_trials=cfg.optuna.n_trials,
-                                                                            verbose=verbose)
+                best_hyperparameters, best_model_cv, val_score = hp.hyperparameter_tuning(cfg.model.name, X_train_cv,
+                                                                                          y_train_cv,
+                                                                                          X_val, y_val,
+                                                                                          n_trials=cfg.optuna.n_trials,
+                                                                                          verbose=verbose)
 
                 logging.info(f"Best hyperparameters: {best_hyperparameters}") if verbose else None
-                logging.info(f"Best model: {best_model}") if verbose else None
+                logging.info(f"Best model: {best_model_cv}") if verbose else None
 
-                # Model training
+                if val_score > best_val_score:
+                    best_val_score = val_score
+                    best_model = best_model_cv
+                    scaler_opt = scaler_cv if data_type == "ML" else None
+
+                logging.info(f"Validation score: {val_score}") if verbose else None
 
                 seed_val += 1
                 break
+
+            X_test = prep.apply_scaling(X_test, scaler_cv, cfg.data.id, verbose)
+
+            best_model.fit(X_train, y_train)
+            y_pred_test = best_model.predict(X_test)
 
             seed += 1
             seed_val = 0

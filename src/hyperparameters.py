@@ -67,6 +67,7 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
     study.optimize(objective, n_trials=n_trials)
 
     best_hyperparameters = study.best_params
+    val_score = study.best_value
     best_model = model.set_params(**best_hyperparameters)
 
-    return best_hyperparameters, best_model
+    return best_hyperparameters, best_model, val_score
