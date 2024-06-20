@@ -26,9 +26,22 @@ data:
   extension: csv
   separator: ","
   target: Label
+  id: Id
+
+scaling:
+  type: Standard # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
+  target: Label
+
+model:
+  name: RandomForest # RandomForest, SVC, LogisticRegression, MLP, XGBoost, LightGBM, CatBoost
+
+optuna:
+  n_trials: 50
 
 experiment:
-  train_size: 0.8
-  test_size: 0.2
-  val_size: 0.1
+  train_size: 0.7
+  test_size: 0.3
+  val_size: 0.2
+  folds: 10
+
 

@@ -4,7 +4,11 @@ from omegaconf import DictConfig
 import logging
 from pathlib import Path
 import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
 import utils
+import hyperparameters as hp
 import preprocessing as prep
 import tqdm
 
@@ -22,7 +26,9 @@ def main(cfg: DictConfig):
     # region Experiment Settings
     num_runs = cfg.settings.runs
     seed = cfg.settings.seed
+    seed_val = 0
     verbose = cfg.settings.verbose
+
     # endregion
 
     # region Folder Check
@@ -37,23 +43,61 @@ def main(cfg: DictConfig):
     # Load the CSV files
     file_list = utils.load_csv_file(data_folder, cfg.data.extension)
 
-    for run in tqdm.tqdm(range(num_runs), desc="Run"):
-        logging.info(f"Run {run+1}") if verbose else None
+    for run in range(num_runs):
+        logging.info(f"Run {run + 1}") if verbose else None
         logging.info(f"Seed: {seed}") if verbose else None
 
-        for file in tqdm.tqdm(file_list, desc="CSV file"):
+        for file in file_list:
             task_df = pd.read_csv(file, sep=cfg.data.separator)
             train_df, test_df = prep.data_split(task_df, cfg.data.target, cfg.experiment.test_size, seed, verbose)
-            train_df, val_df = prep.data_split(train_df, cfg.data.target, cfg.experiment.val_size, seed, verbose)
+            # train_df, val_df = prep.data_split(train_df, cfg.data.target, cfg.experiment.val_size, seed, verbose)
 
             logging.info(f"Train shape: {train_df.shape}") if verbose else None
             logging.info(f"Test shape: {test_df.shape}") if verbose else None
-            logging.info(f"Validation shape: {val_df.shape}") if verbose else None
+            # logging.info(f"Validation shape: {val_df.shape}") if verbose else None
 
-            if data_type == "ML":
-                logging.info("Task: Machine Learning") if verbose else None
+            X_train = train_df.drop(columns=cfg.data.target)
+            y_train = train_df[cfg.data.target]
+
+            X_test = test_df.drop(columns=cfg.data.target)
+            y_test = test_df[cfg.data.target]
+
+            # Cross-validation loop
+            for fold in range(cfg.experiment.folds):
+                logging.info(f"Fold {fold + 1}") if verbose else None
+                # Split the data into train and validation sets
+                X_train, X_val, y_train, y_val = train_test_split(X_train, y_train,
+                                                                  test_size=cfg.experiment.val_size,
+                                                                  random_state=seed, stratify=y_train)
+                # Preprocess the data
+                if data_type == "ML":
+                    logging.info("Task: Machine Learning") if verbose else None
+                    X_train = prep.data_scaling(X_train, cfg.data.id, cfg.scaling.type, verbose)
+                    X_val = prep.data_scaling(X_val, cfg.data.id, cfg.scaling.type, verbose)
+
+                # Hyperparameter tuning using optuna
+                best_hyperparameters, best_model = hp.hyperparameter_tuning(cfg.model.name, X_train, y_train, X_val,
+                                                                            y_val, n_trials=cfg.optuna.n_trials,
+                                                                            verbose=verbose)
+
+                logging.info(f"Best hyperparameters: {best_hyperparameters}") if verbose else None
+                logging.info(f"Best model: {best_model}") if verbose else None
+
+                # Model training
+
+                seed_val += 1
+                break
+
+            seed += 1
+            seed_val = 0
 
             break
+
+            # if data_type == "ML":
+            #     logging.info("Task: Machine Learning") if verbose else None
+            #     X_train = prep.data_scaling(X_train, cfg.data.id, cfg.scaling.type, verbose)
+            #     X_test = prep.data_scaling(X_test, cfg.data.id, cfg.scaling.type, verbose)
+            # break
 
 
 if __name__ == "__main__":

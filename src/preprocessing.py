@@ -4,6 +4,7 @@ from pathlib import Path
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder, RobustScaler
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 
 def data_cleaning_ml(df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
@@ -63,20 +64,24 @@ def data_split(df: pd.DataFrame, target: str = 'Label', test_size: float = 0.2,
     return train_df, test_df
 
 
-def data_scaling(df: pd.DataFrame, scaler_type: str = "Standard", verbose: bool = False) -> pd.DataFrame:
+def data_scaling(df: pd.DataFrame, id_column: str = 'Id',
+                 scaler_type: str = "Standard", verbose: bool = False) -> pd.DataFrame:
     """
     Scale the data
     :param df: pd.DataFrame
+    :param id_column: str
     :param scaler_type: str (Standard, Robust)
     :param verbose: bool
     :return: pd.DataFrame
     """
-    from sklearn.preprocessing import StandardScaler
+    scaler = StandardScaler() if scaler_type == "Standard" else RobustScaler()
 
-    scaler = StandardScaler if scaler_type == "Standard" else RobustScaler
-    scaled_data = scaler.fit_transform(df.iloc[:, :-1])
-    scaled_df = pd.DataFrame(scaled_data, columns=df.columns[:-1])
+    columns_to_scale = df.columns.drop(id_column)
+    scaled_columns = scaler.fit_transform(df[columns_to_scale])
 
-    print(scaled_df.head().to_string()) if verbose else None
+    scaled_df = pd.DataFrame(scaled_columns, columns=columns_to_scale, index=df.index)
+    scaled_df = pd.concat([df[[id_column]], scaled_df], axis=1)
+
+    logging.info(f"Data Scaled: \n {scaled_df}") if verbose else None
 
     return scaled_df
