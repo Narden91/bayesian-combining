@@ -27,10 +27,11 @@ data:
   separator: ","
   target: Label
   id: Id
+  id_index: Id_index
 
 scaling:
   type: Standard # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
-  target: Label
+
 
 model:
   name: RandomForest # RandomForest, SVC, LogisticRegression, MLP, XGBoost, LightGBM, CatBoost
