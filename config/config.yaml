@@ -32,7 +32,6 @@ data:
 scaling:
   type: Standard # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
 
-
 model:
   name: RandomForest # RandomForest, SVC, LogisticRegression, MLP, XGBoost, LightGBM, CatBoost
 
@@ -45,5 +44,14 @@ experiment:
   test_size_final: 0.2
   val_size: 0.2
   folds: 2
+  calibration: False # True or False
+  calibration_method: isotonic # isotonic or sigmoid
+
+bayesian_net:
+  algorithm: HillClimb # HillClimb, Exhaustive, PC, TreeSearch
+  prior_type: BDeu # BDeu, K2 These alternatives specify the type of prior distribution to use for parameter estimation
+  max_parents: 3 #
+  use_parents: False
+  verbose: False
 
 

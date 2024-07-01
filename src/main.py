@@ -11,6 +11,7 @@ import pandas as pd
 from pgmpy.estimators import HillClimbSearch, K2Score, MaximumLikelihoodEstimator, PC, BayesianEstimator
 from pgmpy.inference import VariableElimination
 from pgmpy.models import BayesianNetwork
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
@@ -19,7 +20,8 @@ from sklearn.ensemble import RandomForestClassifier
 import utils
 import hyperparameters as hp
 import preprocessing as prep
-import tqdm
+import bayesian_network as bn
+import classification as clf
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
@@ -58,7 +60,7 @@ def main(cfg: DictConfig):
 
     # Stacking placeholders
     first_level_train_preds = np.zeros((num_subjects, num_tasks))
-    first_level_test_preds = np.zeros((int(num_subjects * cfg.experiment.test_size)+1, num_tasks))
+    first_level_test_preds = np.zeros((int(num_subjects * cfg.experiment.test_size) + 1, num_tasks))
 
     first_level_train_preds = pd.DataFrame(index=sample_df[cfg.data.id],
                                            columns=[f'Task_{i + 1}' for i in range(num_tasks)])
@@ -80,6 +82,8 @@ def main(cfg: DictConfig):
     logging.info(f"Tasks: {num_tasks}") if verbose else None
     logging.info(f"Data Type: {data_type} ") if verbose else None
     logging.info(f"Number of Folds: {cfg.experiment.folds}") if verbose else None
+
+
 
     for run in range(num_runs):
         logging.info(f"------------------------------------------------") if verbose else None
@@ -170,6 +174,12 @@ def main(cfg: DictConfig):
                 X_test = prep.apply_scaling(X_test, scaler_opt, cfg.data.id, verbose)
 
             best_model.fit(X_train, y_train)
+
+            if cfg.experiment.calibration:
+                logging.info("Calibrating model...") if verbose else None
+                best_model = CalibratedClassifierCV(base_estimator=best_model, method='sigmoid', cv='prefit')
+                best_model.fit(X_train, y_train)
+
             y_pred_test = best_model.predict(X_test)
             first_level_test_preds[cfg.data.id] = test_df.index.to_list()
             first_level_test_preds[f'Task_{file_idx + 1}'] = y_pred_test
@@ -179,7 +189,6 @@ def main(cfg: DictConfig):
             first_level_test_preds_proba[f'Task_{file_idx + 1}'] = y_pred_test_proba
 
             break
-
         # Clean predictions
         first_level_train_preds = utils.clean_predictions(first_level_train_preds, cfg.data.id)
         first_level_train_preds['Label'] = y_train.to_numpy()
@@ -195,98 +204,64 @@ def main(cfg: DictConfig):
         # Prepare stacking data
         stacking_trainings_data = first_level_train_preds.drop(cfg.data.id, axis=1)
         stacking_trainings_data_proba = first_level_train_preds_proba.drop(cfg.data.id, axis=1)
-        stacking_data_predictions = first_level_test_preds.drop(cfg.data.id, axis=1)
-        stacking_data_probabilities = first_level_test_preds_proba.drop(cfg.data.id, axis=1)
+        stacking_test_data = first_level_test_preds.drop(cfg.data.id, axis=1)
+        stacking_test_data_probabilities = first_level_test_preds_proba.drop(cfg.data.id, axis=1)
+
+        stacking_trainings_data = utils.mod_predictions(stacking_trainings_data, cfg.data.target)
+        stacking_trainings_data_proba = utils.mod_proba_predictions(stacking_trainings_data_proba, cfg.data.target)
+        stacking_test_data = utils.mod_predictions(stacking_test_data, cfg.data.target)
+        stacking_test_data_probabilities = utils.mod_proba_predictions(stacking_test_data_probabilities,
+                                                                       cfg.data.target)
+
+        # Map predictions to -1 and 1
+        stacking_trainings_data.replace({0: -1}, inplace=True)
+        stacking_trainings_data_proba.replace({0: -1}, inplace=True)
+        stacking_test_data.replace({0: -1}, inplace=True)
+        stacking_test_data_probabilities.replace({0: -1}, inplace=True)
 
         logging.info(f"Stacking trainings data: \n {stacking_trainings_data}") if verbose else None
         logging.info(f"Stacking trainings data proba: \n {stacking_trainings_data_proba}") if verbose else None
-        logging.info(f"Stacking test data predictions: \n {stacking_data_predictions}") if verbose else None
-        logging.info(f"Stacking test data probabilities: \n {stacking_data_probabilities}") if verbose else None
+        logging.info(f"Stacking test data predictions: \n {stacking_test_data}") if verbose else None
+        logging.info(f"Stacking test data probabilities: \n {stacking_test_data_probabilities}") if verbose else None
 
-        # Function to randomly fill NaN with 0 or 1 TODO: Debug, eliminare
-        # def random_binary_fill(x):
-        #     return x if pd.notnull(x) else random.choice([0, 1])
+        selected_columns, predictions = bn.bayesian_network(cfg, run, run_folder, stacking_trainings_data,
+                                                            stacking_trainings_data_proba)
+
+        logging.info(f"Selected tasks: {selected_columns}") if verbose else None
+
+        # Filter the predictions based on the selected tasks from the Bayesian Network
+        stacking_test_data = stacking_test_data[selected_columns]
+        stacking_test_data_probabilities = stacking_test_data_probabilities[selected_columns]
+        y_true_stck = stacking_test_data[cfg.data.target]
+        selected_columns.remove(cfg.data.target)
+        logging.info(f"Stacking test data: \n {stacking_test_data}") if verbose else None
+
+        # Perform Majority Vote
+        mv_pred = clf.majority_vote(stacking_test_data)
+        logging.info(f"Majority Vote predictions: \n {mv_pred}") if verbose else None
+        mv_metrics = utils.compute_metrics(y_true_stck, mv_pred)
+        filename_mv = run_folder / f"majority_vote_metrics_{run + 1}.txt"
+        utils.save_metrics_to_file(mv_metrics, filename_mv)
+
+        logging.info(f"Majority Vote metrics: \n {mv_metrics}") if verbose else None
+
+        # Perform Weighted Majority Vote
+
         #
-        # # Apply random filling to all columns except 'Label'
-        # for col in stacking_data_predictions.columns:
-        #     if col != cfg.data.target:
-        #         stacking_data_predictions[col] = stacking_data_predictions[col].apply(random_binary_fill)
+        # # Multiply the probabilities by the predictions
+        # stacking_pred_proba = stacking_test_data[selected_columns] * stacking_test_data_probabilities[selected_columns]
+        # stacking_pred_proba[cfg.data.target] = stacking_pred_proba[selected_columns].sum(axis=1)
         #
-        # logging.info(f"Data: \n {stacking_data_predictions}") if verbose else None
+        # logging.info(f"Stacking predictions: \n {stacking_pred_proba}") if verbose else None
         #
-        # # Ensure all columns are of type int
-        # for col in stacking_data_predictions.columns:
-        #     stacking_data_predictions[col] = stacking_data_predictions[col].astype(int)
+        # def majority_vote(row):
+        #     return np.sign(row[selected_columns].sum())
         #
-        # # Build Bayesian Network
-        # logging.info("\nBuilding Bayesian Network...")
-        # hc = HillClimbSearch(stacking_data_predictions)
-        # best_model = hc.estimate()
+        # # Apply the function row-wise and add the MV column
+        # stacking_test_data['MV'] = stacking_test_data.apply(majority_vote, axis=1)
         #
-        # logging.info("\nBest model edges:")
-        # logging.info(best_model.edges())
-        #
-        # model = BayesianNetwork(best_model.edges())
-        #
-        # # Fit the parameters
-        # model.fit(stacking_data_predictions, estimator=BayesianEstimator, prior_type="BDeu")
-        #
-        # # Create a Graphviz object
-        # dot = graphviz.Digraph(comment=f'Bayesian Network {run+1}')
-        # dot.attr(rankdir='LR')
-        #
-        # # Add nodes
-        # for node in model.nodes():
-        #     if node == 'Label':
-        #         dot.node(node, node, shape='diamond')
-        #     else:
-        #         dot.node(node, node)
-        #
-        # # Add edges
-        # for edge in model.edges():
-        #     dot.edge(edge[0], edge[1])
-        #
-        # bn_path = run_folder / f"bayesian_network_{run+1}"
-        #
-        # # Render the graph
-        # dot.render(bn_path, format='png', cleanup=True)
-        # logging.info("Bayesian Network saved")
-        #
-        # # Print network structure
-        # logging.info("\nNetwork Structure:")
-        # for edge in model.edges():
-        #     logging.info(f"{edge[0]} -> {edge[1]}")
-        #
-        # # Analyze network
-        # logging.info("\nNode degrees:")
-        # for node in model.nodes():
-        #     in_degree = len(model.get_parents(node))
-        #     out_degree = len(model.get_children(node))
-        #     logging.info(f"{node}: In-degree = {in_degree}, Out-degree = {out_degree}")
-        #
-        # # Find Markov blanket for Label
-        # logging.info("\nMarkov blanket for Label:")
-        # label_markov_blanket = model.get_markov_blanket('Label')
-        # logging.info(f"Label: {label_markov_blanket}")
-        #
-        # # Select columns based on Markov blanket
-        # selected_columns = list(label_markov_blanket) + ['Label']
-        # stacking_data_predictions_selected = stacking_data_predictions[selected_columns]
-        #
-        # # Perform inference
-        # logging.info("\nPerforming inference...")
-        # inference = VariableElimination(model)
-        #
-        # # Make predictions using majority vote
-        # predictions = []
-        # for _, row in stacking_data_predictions_selected.iterrows():
-        #     evidence = {col: row[col] for col in label_markov_blanket}
-        #     prediction = inference.map_query(['Label'], evidence=evidence)
-        #     predictions.append(prediction['Label'])
-        #
-        # # Calculate accuracy
-        # accuracy = accuracy_score(stacking_data_predictions_selected['Label'], predictions)
-        # logging.info(f"\nAccuracy: {accuracy}")
+        # logging.info(f"Stacking test data predictions filtered: \n {stacking_test_data}") if verbose else None
+
 
         seed += 1
         seed_val = 0
@@ -296,6 +271,3 @@ def main(cfg: DictConfig):
 
 if __name__ == "__main__":
     main()
-
-
-
