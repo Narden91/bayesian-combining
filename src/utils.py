@@ -8,6 +8,33 @@ import logging
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef
 
 
+def get_output_folder(output_path, cfg: dict) -> Path:
+    """
+    Get the output folder based on the configuration parameters.
+    :param output_path:
+    :param cfg: dict
+    :return:
+    """
+    root_output_folder = output_path / cfg.data.type
+
+    if cfg.experiment.calibration:
+        root_output_folder = root_output_folder / "Calibration" / cfg.experiment.stacking_method
+    else:
+        root_output_folder = root_output_folder / "No_Calibration" / cfg.experiment.stacking_method
+
+    if cfg.experiment.stacking_method == 'Classifier':
+        root_output_folder = root_output_folder / cfg.experiment.stacking_model
+    elif cfg.experiment.stacking_method == 'Bayesian':
+        root_output_folder = root_output_folder / f"{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.prior_type}"
+        if cfg.bayesian_net.use_parents:
+            root_output_folder = root_output_folder / f"max_parents_{cfg.experiment.max_parents}"
+        else:
+            root_output_folder = root_output_folder / "no_max_parents"
+    else:
+        raise ValueError(f"Invalid stacking method: {cfg.experiment.stacking_method}")
+
+    return root_output_folder
+
 def load_csv_file(folder_path: str = "", extension=",") -> list[Path]:
     """
     Load the CSV file from the folder path.
@@ -155,12 +182,13 @@ def save_metrics_to_file(metrics: dict, filename: str) -> None:
     # class_labels = ['Class 0', 'Class 1']
     # formatted_cm = format_confusion_matrix(metrics['confusion_matrix'], class_labels)
 
-    with open(filename, 'w') as f:
-        # f.write(formatted_cm)
-        f.write("\nMetrics:\n")
-        f.write(f"Accuracy: {metrics['accuracy']}\n")
-        f.write(f"Precision: {metrics['precision']}\n")
-        f.write(f"Sensitivity: {metrics['sensitivity']}\n")
-        f.write(f"Specificity: {metrics['specificity']}\n")
-        f.write(f"F1 Score: {metrics['f1_score']}\n")
-        f.write(f"MCC: {metrics['mcc']}\n")
+    # check if the file exists otherwise create it
+    if not os.path.exists(filename):
+        with open(filename, 'w') as f:
+            f.write("Metrics:\n")
+            f.write(f"Accuracy: {metrics['accuracy']}\n")
+            f.write(f"Precision: {metrics['precision']}\n")
+            f.write(f"Sensitivity: {metrics['sensitivity']}\n")
+            f.write(f"Specificity: {metrics['specificity']}\n")
+            f.write(f"F1 Score: {metrics['f1_score']}\n")
+            f.write(f"MCC: {metrics['mcc']}\n")

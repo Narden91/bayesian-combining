@@ -33,7 +33,7 @@ scaling:
   type: Standard # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
 
 model:
-  name: RandomForest # RandomForest, SVC, LogisticRegression, MLP, XGBoost, LightGBM, CatBoost
+  name: DecisionTree # RandomForest, SVC, LogisticRegression, MLP, XGBoost, LightGBM, CatBoost
 
 optuna:
   n_trials: 5
@@ -44,8 +44,12 @@ experiment:
   test_size_final: 0.2
   val_size: 0.2
   folds: 2
-  calibration: False # True or False
+  calibration: True # True or False
   calibration_method: isotonic # isotonic or sigmoid
+  calibration_cv: 5
+  stacking_method: Bayesian # Bayesian, Classifier
+  stacking_model: MLP # MLP, RandomForest, SVC, LogisticRegression
+
 
 bayesian_net:
   algorithm: HillClimb # HillClimb, Exhaustive, PC, TreeSearch
