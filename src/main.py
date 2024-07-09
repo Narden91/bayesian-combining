@@ -114,6 +114,10 @@ def main(cfg: DictConfig):
             best_model = None
             scaler_opt = None
 
+            val_scores = []
+            models = []
+            all_val_indices = set()
+
             # Stratified K-Fold Cross Validation to avoid class imbalance into folds
             skf = StratifiedKFold(n_splits=cfg.experiment.folds, shuffle=True, random_state=seed)
 
@@ -123,39 +127,50 @@ def main(cfg: DictConfig):
                 X_train_cv, X_val = X_train.iloc[train_index], X_train.iloc[val_index]
                 y_train_cv, y_val = y_train.iloc[train_index], y_train.iloc[val_index]
 
+                all_val_indices.update(val_index)
+
                 # Preprocess the data
                 if data_type == "ML":
                     X_train_cv, scaler_cv = prep.data_scaling(X_train_cv, cfg.data.id, cfg.scaling.type, verbose)
                     X_val = prep.apply_scaling(X_val, scaler_cv, cfg.data.id, verbose)
 
                 # Hyperparameter tuning using optuna
-                best_hyperparameters, best_model_cv, val_score = hp.hyperparameter_tuning(cfg.model.name, X_train_cv,
-                                                                                          y_train_cv,
-                                                                                          X_val, y_val,
-                                                                                          n_trials=cfg.optuna.n_trials,
-                                                                                          verbose=verbose)
+                best_hyperparameters, best_model_cv, _ = hp.hyperparameter_tuning(cfg.model.name, X_train_cv,
+                                                                                  y_train_cv,
+                                                                                  X_val, y_val,
+                                                                                  n_trials=cfg.optuna.n_trials,
+                                                                                  verbose=verbose)
 
                 val_pred = best_model_cv.predict(X_val)
                 val_proba = best_model_cv.predict_proba(X_val)[:, 1]
                 first_level_train_preds.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_pred
-                # first_level_train_preds.loc[X_train.index[val_index], cfg.data.id] = X_val.index.to_list()
                 first_level_train_preds_proba.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_proba
-                # first_level_train_preds_proba.loc[X_train.index[val_index], cfg.data.id] = X_val.index.to_list()
 
-                if val_score > best_val_score:
-                    best_val_score = val_score
-                    best_model = best_model_cv
-                    scaler_opt = scaler_cv if data_type == "ML" else None
+                # Accuracy score
+                val_score = utils.compute_metrics(y_val, val_pred)['accuracy']
+                val_scores.append(val_score)
+                models.append(best_model_cv)
 
                 if verbose:
                     logging.info(f"Best hyperparameters: {best_hyperparameters}")
-                    logging.info(f"Best model: {best_model_cv}")
                     logging.info(f"Validation score: {val_score}")
-
                 seed_val += 1
+            assert len(all_val_indices) == len(X_train), "Folds do not contain all different samples"
+
+            # Average validation score
+            avg_val_score = np.mean(val_scores)
+            logging.info("------------------------------------------------") if verbose else None
+            logging.info(f"Average validation score: {avg_val_score}") if verbose else None
 
             if data_type == "ML":
+                X_train, scaler_opt = prep.data_scaling(X_train, cfg.data.id, cfg.scaling.type, verbose)
                 X_test = prep.apply_scaling(X_test, scaler_opt, cfg.data.id, verbose)
+
+            # Perform hyperparameter search on the entire training dataset
+            best_hyperparameters, best_model, _ = hp.hyperparameter_tuning(cfg.model.name, X_train, y_train,
+                                                                           None, None,
+                                                                           n_trials=cfg.optuna.n_trials,
+                                                                           verbose=verbose)
 
             best_model.fit(X_train, y_train)
 

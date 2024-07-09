@@ -80,11 +80,12 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
         }
 
         model.set_params(**hyperparameters)
-
         model.fit(X_train, y_train)
-        val_score = model.score(X_val, y_val)
 
-        return val_score
+        if X_val is None or y_val is None:
+            return model.score(X_train, y_train)
+        else:
+            return model.score(X_val, y_val)
 
     if model_name == "RandomForest":
         model = RandomForestClassifier()
