@@ -29,7 +29,6 @@ def main(cfg: DictConfig):
     # region Experiment Settings
     num_runs = cfg.settings.runs
     global_seed = cfg.settings.seed
-    seed_val = 0
     verbose = cfg.settings.verbose
 
     # endregion
@@ -154,7 +153,6 @@ def main(cfg: DictConfig):
                 if verbose:
                     logging.info(f"Best hyperparameters: {best_hyperparameters}")
                     logging.info(f"Validation score: {val_score}")
-                seed_val += 1
             assert len(all_val_indices) == len(X_train), "Folds do not contain all different samples"
 
             # Average validation score
@@ -269,8 +267,6 @@ def main(cfg: DictConfig):
             utils.save_metrics_to_file(stck_metrics, filename_stck)
             logging.info(f"Stacking metrics: \n {stck_metrics}") if verbose else None
         seed += 1
-        seed_val = 0
-
         break
 
     # End time
