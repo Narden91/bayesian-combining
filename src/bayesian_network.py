@@ -2,22 +2,125 @@ import logging
 import graphviz
 import numpy as np
 import pandas as pd
-from pgmpy.estimators import HillClimbSearch, ExhaustiveSearch, PC, TreeSearch, BayesianEstimator
+from pgmpy.estimators import HillClimbSearch, ExhaustiveSearch, PC, TreeSearch, BayesianEstimator, BicScore
 from pgmpy.models import BayesianNetwork
 from pgmpy.inference import VariableElimination
+from pgmpy.metrics import log_likelihood_score
 from tqdm import tqdm
 
 
+# def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions: pd.DataFrame,
+#                      df_predictions_proba: pd.DataFrame) -> (list, pd.DataFrame):
+#     """
+#     Build a Bayesian Network using the predictions from the stacking models.
+#     :param cfg: dict
+#     :param run_number: int
+#     :param run_folder: str
+#     :param df_predictions: pd.DataFrame
+#     :param df_predictions_proba: pd.DataFrame
+#     :return: list, pd.DataFrame
+#     """
+#     # Build Bayesian Network
+#     algorithm_mapping = {
+#         'HillClimb': HillClimbSearch,
+#         'Exhaustive': ExhaustiveSearch,
+#         'PC': PC,
+#         'TreeSearch': TreeSearch
+#     }
+#
+#     if cfg.bayesian_net.algorithm not in algorithm_mapping:
+#         raise ValueError(f"Invalid algorithm: {cfg.bayesian_net.algorithm}")
+#
+#     bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions)
+#
+#     logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
+#
+#     if cfg.bayesian_net.use_parents:
+#         best_model_stck = bn_model.estimate(max_indegree=cfg.experiment.max_parents)
+#         logging.info(f"Using max_parents = {cfg.experiment.max_parents}")
+#     else:
+#         best_model_stck = bn_model.estimate()
+#         logging.info("No max_parents constraint applied")
+#
+#     if cfg.bayesian_net.verbose:
+#         logging.info("Best model edges:")
+#         logging.info(best_model_stck.edges())
+#
+#     model = BayesianNetwork(best_model_stck.edges())
+#     model.fit(df_predictions, estimator=BayesianEstimator, prior_type=cfg.bayesian_net.prior_type)
+#
+#     # Calculate BIC score
+#     bic = BicScore(df_predictions)
+#     bic_score = bic.score(model)
+#     logging.info(f"BIC Score: {bic_score}")
+#
+#     # Create and save Bayesian Network visualization
+#     create_bn_visualization(model, cfg.data.target, run_folder, run_number)
+#
+#     # Analyze and log network structure
+#     analyze_network_structure(model, cfg)
+#
+#     # Find Markov blanket for target
+#     label_markov_blanket = model.get_markov_blanket(cfg.data.target)
+#     logging.info(f"Markov Blanket for {cfg.data.target}: {label_markov_blanket}")
+#
+#     # Select columns based on Markov blanket
+#     selected_columns = list(label_markov_blanket) + [cfg.data.target]
+#     selected_tasks_df = df_predictions[selected_columns]
+#
+#     # Perform improved inference
+#     logging.info("Performing inference...")
+#     inference = VariableElimination(model)
+#
+#     # Make predictions using probabilistic inference
+#     predictions = []
+#     probabilities_class_0 = []
+#     probabilities_class_1 = []
+#
+#     for _, row in tqdm(selected_tasks_df.iterrows(), total=len(selected_tasks_df), desc="Inferring"):
+#         evidence = {col: row[col] for col in label_markov_blanket}
+#         query_result = inference.query([cfg.data.target], evidence=evidence)
+#
+#         # Get the probabilities for both classes
+#         probs = query_result.values
+#
+#         # Get the most probable class
+#         prediction = np.argmax(probs)
+#         predictions.append(prediction)
+#
+#         # Store probabilities for both classes
+#         probabilities_class_0.append(probs[0])
+#         probabilities_class_1.append(probs[1])
+#
+#     # Create DataFrame with predictions and probabilities for both classes
+#     results_df = pd.DataFrame({
+#         cfg.data.target: predictions,
+#         f"{cfg.data.target}_proba_-1": probabilities_class_0,
+#         f"{cfg.data.target}_proba_1": probabilities_class_1
+#     })
+#
+#     # Map Label 0 to 1
+#     results_df[cfg.data.target] = results_df[cfg.data.target].map({0: -1, 1: 1})
+#
+#     return selected_columns, results_df
+
+
 def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions: pd.DataFrame,
-                     df_predictions_proba: pd.DataFrame) -> (list, pd.DataFrame):
+                     df_predictions_proba: pd.DataFrame, df_test: pd.DataFrame) -> (list, pd.DataFrame, pd.DataFrame):
     """
-    Build a Bayesian Network using the predictions from the stacking models.
+    Build a Bayesian Network using the predictions from the stacking models and perform classification on test data.
+    Algorithm options: HillClimb, Exhaustive, PC, TreeSearch
+    USE_PARENTS: True, False
+    MAX_PARENTS: int
+    Prior type: K2, BDeu
+
     :param cfg: dict
     :param run_number: int
     :param run_folder: str
     :param df_predictions: pd.DataFrame
     :param df_predictions_proba: pd.DataFrame
-    :return: list, pd.DataFrame
+    :param df_test: pd.DataFrame
+    :return: list, pd.DataFrame, pd.DataFrame
     """
     # Build Bayesian Network
     algorithm_mapping = {
@@ -35,11 +138,11 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
     logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
 
     if cfg.bayesian_net.use_parents:
-        best_model_stck = bn_model.estimate(max_indegree=cfg.experiment.max_parents)
         logging.info(f"Using max_parents = {cfg.experiment.max_parents}")
+        best_model_stck = bn_model.estimate(max_indegree=cfg.experiment.max_parents)
     else:
-        best_model_stck = bn_model.estimate()
         logging.info("No max_parents constraint applied")
+        best_model_stck = bn_model.estimate()
 
     if cfg.bayesian_net.verbose:
         logging.info("Best model edges:")
@@ -47,6 +150,21 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
 
     model = BayesianNetwork(best_model_stck.edges())
     model.fit(df_predictions, estimator=BayesianEstimator, prior_type=cfg.bayesian_net.prior_type)
+
+    logging.info("--------------------------------------------")
+    # Calculate BIC score
+    bic = BicScore(df_predictions)
+    bic_score = bic.score(model)
+    logging.info(f"BIC Score: {bic_score}")
+
+    # Calculate log likelihood score on training data
+    log_likelihood = log_likelihood_score(model, df_predictions)
+    logging.info(f"Log Likelihood Score: {log_likelihood}")
+
+    # Calculate log likelihood score on test data
+    log_likelihood_test = log_likelihood_score(model, df_test)
+    logging.info(f"Log Likelihood Score (Test): {log_likelihood_test}")
+    logging.info("--------------------------------------------")
 
     # Create and save Bayesian Network visualization
     create_bn_visualization(model, cfg.data.target, run_folder, run_number)
@@ -66,14 +184,46 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
     logging.info("Performing inference...")
     inference = VariableElimination(model)
 
-    # Make predictions using probabilistic inference
+    # Make predictions using probabilistic inference on training data
+    predictions_train, probabilities_class_0_train, probabilities_class_1_train = perform_inference(inference, selected_tasks_df, cfg.data.target, label_markov_blanket)
+
+    # Create DataFrame with predictions and probabilities for training data
+    results_df_train = pd.DataFrame({
+        cfg.data.target: predictions_train,
+        f"{cfg.data.target}_proba_-1": probabilities_class_0_train,
+        f"{cfg.data.target}_proba_1": probabilities_class_1_train
+    })
+
+    # Map Label 0 to -1 for training data
+    results_df_train[cfg.data.target] = results_df_train[cfg.data.target].map({0: -1, 1: 1})
+
+    # Perform inference on test data
+    test_columns = [col for col in selected_columns if col != cfg.data.target]
+    test_tasks_df = df_test[test_columns]
+    predictions_test, probabilities_class_0_test, probabilities_class_1_test = perform_inference(inference, test_tasks_df, cfg.data.target, label_markov_blanket)
+
+    # Create DataFrame with predictions and probabilities for test data
+    results_df_test = pd.DataFrame({
+        cfg.data.target: predictions_test,
+        f"{cfg.data.target}_proba_-1": probabilities_class_0_test,
+        f"{cfg.data.target}_proba_1": probabilities_class_1_test
+    })
+
+    # Map Label 0 to -1 for test data
+    results_df_test[cfg.data.target] = results_df_test[cfg.data.target].map({0: -1, 1: 1})
+
+    # return selected_columns, results_df_train, results_df_test
+    return selected_columns, results_df_train, results_df_test, bic_score, log_likelihood, log_likelihood_test
+
+
+def perform_inference(inference, df, target, markov_blanket):
     predictions = []
     probabilities_class_0 = []
     probabilities_class_1 = []
 
-    for _, row in tqdm(selected_tasks_df.iterrows(), total=len(selected_tasks_df), desc="Inferring"):
-        evidence = {col: row[col] for col in label_markov_blanket}
-        query_result = inference.query([cfg.data.target], evidence=evidence)
+    for _, row in tqdm(df.iterrows(), total=len(df), desc="Inferring"):
+        evidence = {col: row[col] for col in markov_blanket if col != target}
+        query_result = inference.query([target], evidence=evidence)
 
         # Get the probabilities for both classes
         probs = query_result.values
@@ -86,17 +236,7 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
         probabilities_class_0.append(probs[0])
         probabilities_class_1.append(probs[1])
 
-    # Create DataFrame with predictions and probabilities for both classes
-    results_df = pd.DataFrame({
-        cfg.data.target: predictions,
-        f"{cfg.data.target}_proba_-1": probabilities_class_0,
-        f"{cfg.data.target}_proba_1": probabilities_class_1
-    })
-
-    # Map Label 0 to 1
-    results_df[cfg.data.target] = results_df[cfg.data.target].map({0: -1, 1: 1})
-
-    return selected_columns, results_df
+    return predictions, probabilities_class_0, probabilities_class_1
 
 
 def create_bn_visualization(model, target, run_folder, run_number):

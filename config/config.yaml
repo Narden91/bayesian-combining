@@ -16,6 +16,7 @@ settings:
   seed: 42
   runs: 1
   verbose: True
+  debug: False
 
 paths:
   source: data
@@ -23,6 +24,7 @@ paths:
 
 data:
   type: ML # ML or DL
+  dataset: All # All, InAir, OnPaper, InAirOnPaper
   extension: csv
   separator: ","
   target: Label
@@ -47,7 +49,7 @@ experiment:
   calibration: True # True or False
   calibration_method: isotonic # isotonic or sigmoid
   calibration_cv: 5
-  stacking_method: Bayesian # Bayesian, Classifier
+  stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
   stacking_model: MLP # MLP, RandomForest, SVC, LogisticRegression
 
 

@@ -24,13 +24,14 @@ def main(cfg: DictConfig):
     output_path = project_root / Path(cfg.paths.output)
     data_type = cfg.data.type
     data_folder = data_parent_path / data_type
+    data_folder = data_folder / cfg.data.dataset
     # endregion
 
     # region Experiment Settings
     num_runs = cfg.settings.runs
     global_seed = cfg.settings.seed
     verbose = cfg.settings.verbose
-
+    debug = cfg.settings.debug
     # endregion
 
     # region Folder Check
@@ -74,11 +75,11 @@ def main(cfg: DictConfig):
     start_time = time.time()
 
     for run in range(num_runs):
-        logging.info(f"------------------------------------------------") if verbose else None
+        logging.info(f"------------------------------------------------")
         run_folder = root_output_folder / f"run_{run + 1}"
         os.makedirs(run_folder) if not run_folder.exists() else None
         seed = global_seed + run
-        logging.info(f"Run {run + 1}") if verbose else None
+        logging.info(f"Run {run + 1}")
         logging.info(f"Seed: {seed}") if verbose else None
 
         for file_idx, file in enumerate(file_list):
@@ -140,7 +141,7 @@ def main(cfg: DictConfig):
                 first_level_train_preds.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_pred
                 first_level_train_preds_proba.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_proba
 
-                # Accuracy score
+                # Accuracy score but can be changed to other metrics
                 val_score = utils.compute_metrics(y_val, val_pred)['accuracy']
                 val_scores.append(val_score)
                 models.append(best_model_cv)
@@ -163,7 +164,7 @@ def main(cfg: DictConfig):
             best_model.fit(X_train, y_train)
 
             if cfg.experiment.calibration:
-                logging.info("Calibrating model...") if verbose else None
+                logging.info("Calibrating model...")
                 best_model = CalibratedClassifierCV(estimator=best_model,
                                                     method=cfg.experiment.calibration_method,
                                                     cv=cfg.experiment.calibration_cv)
@@ -176,8 +177,8 @@ def main(cfg: DictConfig):
             y_pred_test_proba = best_model.predict_proba(X_test)[:, 1]
             first_level_test_preds_proba[cfg.data.id] = test_df.index.to_list()
             first_level_test_preds_proba[f'Task_{file_idx + 1}'] = y_pred_test_proba
+            break # For Debugging, eliminate later
 
-            break
         # Clean predictions
         first_level_train_preds = utils.clean_predictions(first_level_train_preds, cfg.data.id)
         first_level_train_preds['Label'] = y_train.to_numpy()
@@ -209,16 +210,46 @@ def main(cfg: DictConfig):
         stacking_test_data.replace({0: -1}, inplace=True)
         stacking_test_data_probabilities.replace({0: -1}, inplace=True)
 
-        logging.info(f"Stacking trainings data: \n {stacking_trainings_data}") if verbose else None
-        logging.info(f"Stacking trainings data proba: \n {stacking_trainings_data_proba}") if verbose else None
-        logging.info(f"Stacking test data predictions: \n {stacking_test_data}") if verbose else None
-        logging.info(f"Stacking test data probabilities: \n {stacking_test_data_probabilities}") if verbose else None
+        first_level_data_folder = run_folder / "First_level_data"
+        os.makedirs(first_level_data_folder) if not first_level_data_folder.exists() else None
+
+        # Save the stacking data and probabilities to csv files
+        stacking_trainings_data.to_csv(first_level_data_folder / f"Trainings_data.csv", index=False)
+        stacking_trainings_data_proba.to_csv(first_level_data_folder / f"Trainings_data_proba.csv", index=False)
+        stacking_test_data.to_csv(first_level_data_folder / f"Test_data.csv", index=False)
+        stacking_test_data_probabilities.to_csv(first_level_data_folder / f"Test_data_probabilities.csv", index=False)
+
+        logging.info(f"Stacking trainings data: \n {stacking_trainings_data}") if debug else None
+        logging.info(f"Stacking trainings data proba: \n {stacking_trainings_data_proba}") if debug else None
+        logging.info(f"Stacking test data predictions: \n {stacking_test_data}") if debug else None
+        logging.info(f"Stacking test data probabilities: \n {stacking_test_data_probabilities}") if debug else None
 
         if cfg.experiment.stacking_method == 'Bayesian':
-            selected_columns, predictions = bn.bayesian_network(cfg, run, run_folder, stacking_trainings_data,
-                                                                stacking_trainings_data_proba)
+            (selected_columns, predictions_train, predictions_test, bic_score,
+             log_likelihood_train, log_likelihood_test) = bn.bayesian_network(cfg, run, run_folder,
+                                                                              stacking_trainings_data,
+                                                                              stacking_trainings_data_proba,
+                                                                              stacking_test_data)
 
-            logging.info(f"Selected tasks: {selected_columns}") if verbose else None
+            # Evaluate results on training data
+            y_true_train = stacking_trainings_data[cfg.data.target]
+            y_pred_train = predictions_train[cfg.data.target]
+            train_metrics = utils.compute_metrics(y_true_train, y_pred_train)
+            train_metrics['bic_score'] = bic_score
+            train_metrics['log_likelihood'] = log_likelihood_train
+            filename_train = run_folder / f"bayesian_network_train_metrics_{run + 1}.txt"
+            utils.save_metrics_bn_to_file(train_metrics, filename_train)
+            logging.info(f"Bayesian Network training metrics: \n {train_metrics}") if verbose else None
+
+            # Evaluate results on test data
+            y_true_test = stacking_test_data[cfg.data.target]
+            y_pred_test = predictions_test[cfg.data.target]
+            test_metrics = utils.compute_metrics(y_true_test, y_pred_test)
+            test_metrics['bic_score'] = bic_score
+            test_metrics['log_likelihood'] = log_likelihood_test
+            filename_test = run_folder / f"bayesian_network_test_metrics_{run + 1}.txt"
+            utils.save_metrics_bn_to_file(test_metrics, filename_test)
+            logging.info(f"Bayesian Network test metrics: \n {test_metrics}") if verbose else None
 
             # Filter the predictions based on the selected tasks from the Bayesian Network
             stacking_test_data = stacking_test_data[selected_columns]
@@ -232,19 +263,18 @@ def main(cfg: DictConfig):
             mv_pred = clf.majority_vote(stacking_test_data)
             logging.info(f"Majority Vote predictions: \n {mv_pred}") if verbose else None
             mv_metrics = utils.compute_metrics(y_true_stck, mv_pred)
-            filename_mv = run_folder / f"majority_vote_metrics_{run + 1}.txt"
-            utils.save_metrics_to_file(mv_metrics, filename_mv)
-
-            logging.info(f"Majority Vote metrics: \n {mv_metrics}") if verbose else None
+            filename_mv_bn = run_folder / f"majority_vote_bn_metrics_{run + 1}.txt"
+            utils.save_metrics_to_file(mv_metrics, filename_mv_bn)
+            logging.info(f"Majority Vote using BN, metrics: \n {mv_metrics}") if verbose else None
 
             # Perform Weighted Majority Vote
             wmv_pred = clf.weighted_majority_vote(stacking_test_data, stacking_test_data_probabilities)
             logging.info(f"Weighted Majority Vote predictions: \n {wmv_pred}") if verbose else None
             wmv_metrics = utils.compute_metrics(y_true_stck, wmv_pred)
-            filename_wmv = run_folder / f"weighted_majority_vote_metrics_{run + 1}.txt"
-            utils.save_metrics_to_file(wmv_metrics, filename_wmv)
-            logging.info(f"Weighted Majority Vote metrics: \n {wmv_metrics}") if verbose else None
-        elif cfg.experiment.stacking_method == 'Classifier':
+            filename_wmv_bn = run_folder / f"weighted_majority_bn_vote_metrics_{run + 1}.txt"
+            utils.save_metrics_to_file(wmv_metrics, filename_wmv_bn)
+            logging.info(f"Weighted Majority Vote using BN, metrics: \n {wmv_metrics}") if verbose else None
+        elif cfg.experiment.stacking_method == 'Classification':
             stacking_model = clf.stacking_classification(cfg, stacking_trainings_data, cfg.data.target, seed)
             y_true_stck = stacking_test_data[cfg.data.target]
             X_test_stck = stacking_test_data.drop(cfg.data.target, axis=1)
@@ -252,12 +282,53 @@ def main(cfg: DictConfig):
             y_pred_proba_stck = stacking_model.predict_proba(X_test_stck)
 
             stck_metrics = utils.compute_metrics(y_true_stck, y_pred_stck)
-
             filename_stck = run_folder / f"stacking_metrics_{run + 1}.txt"
             utils.save_metrics_to_file(stck_metrics, filename_stck)
             logging.info(f"Stacking metrics: \n {stck_metrics}") if verbose else None
+        elif cfg.experiment.stacking_method == 'MajorityVote':
+            y_true_test = stacking_test_data[cfg.data.target]
+            stacking_test_data.drop(cfg.data.target, axis=1, inplace=True)
+            stacking_test_data_probabilities.drop(cfg.data.target, axis=1, inplace=True)
+            mv_pred = clf.majority_vote(stacking_test_data, stacking_test_data_probabilities)
+            logging.info(f"Majority Vote predictions: \n {mv_pred}") if verbose else None
+            mv_metrics = utils.compute_metrics(y_true_test, mv_pred)
+            filename_mv = run_folder / f"weighted_majority_vote_metrics_{run + 1}.txt"
+            utils.save_metrics_to_file(mv_metrics, filename_mv)
+            logging.info(f"Majority Vote, using first level predictions,metrics: \n {mv_metrics}") if verbose else None
+        elif cfg.experiment.stacking_method == 'WeightedMajorityVote':
+            y_true_test = stacking_test_data[cfg.data.target]
+            stacking_test_data.drop(cfg.data.target, axis=1, inplace=True)
+            stacking_test_data_probabilities.drop(cfg.data.target, axis=1, inplace=True)
+            wmv_pred = clf.weighted_majority_vote(stacking_test_data, stacking_test_data_probabilities)
+            logging.info(f"Weighted Majority Vote predictions: \n {wmv_pred}") if verbose else None
+            wmv_metrics = utils.compute_metrics(y_true_test, wmv_pred)
+            filename_wmv = run_folder / f"weighted_majority_vote_metrics_{run + 1}.txt"
+            utils.save_metrics_to_file(wmv_metrics, filename_wmv)
+            logging.info(f"Weighted Majority Vote, using first level predictions, "
+                         f"metrics: \n {wmv_metrics}") if verbose else None
         seed += 1
-        break
+        break  # For Debugging, eliminate later
+
+    # Calculate average metrics across all runs
+    average_metrics = utils.calculate_average_metrics(root_output_folder)
+    if average_metrics:
+        logging.info("Average metrics across all runs:") if debug else None
+        for approach, metrics in average_metrics.items():
+            logging.info(f"\n{approach.capitalize()} Approach:") if debug else None
+            for metric, value in metrics.items():
+                logging.info(f"  {metric}: {value:.5f}") if debug else None
+
+        # Save average metrics to a file
+        average_metrics_file = root_output_folder / "average_metrics.txt"
+        with open(average_metrics_file, 'w') as f:
+            f.write("Average Metrics:\n")
+            for approach, metrics in average_metrics.items():
+                f.write(f"\n{approach.capitalize()} Approach:\n")
+                for metric, value in metrics.items():
+                    f.write(f"  {metric}: {value:.5f}\n")
+        logging.info(f"Average metrics saved to {average_metrics_file}") if verbose else None
+    else:
+        logging.warning("No metrics files found or processed.")
 
     # End time
     end_time = time.time()

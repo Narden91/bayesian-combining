@@ -1,5 +1,7 @@
 import os
 import random
+import re
+from collections import defaultdict
 from pathlib import Path
 
 import pandas as pd
@@ -22,7 +24,7 @@ def get_output_folder(output_path, cfg: dict) -> Path:
     else:
         root_output_folder = root_output_folder / "No_Calibration" / cfg.experiment.stacking_method
 
-    if cfg.experiment.stacking_method == 'Classifier':
+    if cfg.experiment.stacking_method == 'Classification':
         root_output_folder = root_output_folder / cfg.experiment.stacking_model
     elif cfg.experiment.stacking_method == 'Bayesian':
         root_output_folder = root_output_folder / f"{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.prior_type}"
@@ -34,6 +36,7 @@ def get_output_folder(output_path, cfg: dict) -> Path:
         raise ValueError(f"Invalid stacking method: {cfg.experiment.stacking_method}")
 
     return root_output_folder
+
 
 def load_csv_file(folder_path: str = "", extension=",") -> list[Path]:
     """
@@ -192,3 +195,56 @@ def save_metrics_to_file(metrics: dict, filename: str) -> None:
             f.write(f"Specificity: {metrics['specificity']}\n")
             f.write(f"F1 Score: {metrics['f1_score']}\n")
             f.write(f"MCC: {metrics['mcc']}\n")
+
+
+def save_metrics_bn_to_file(metrics: dict, filename: str) -> None:
+    """
+    Save the metrics of the BN to a text file.
+    :param metrics:
+    :param filename:
+    :return:
+    """
+    # class_labels = ['Class 0', 'Class 1']
+    # formatted_cm = format_confusion_matrix(metrics['confusion_matrix'], class_labels)
+    logging.info(f"Metrics: {metrics}")
+
+    # check if the file exists otherwise create it
+    if not os.path.exists(filename):
+        with open(filename, 'w') as f:
+            f.write("Metrics from Bayesian Network:\n")
+            f.write(f"Accuracy: {metrics['accuracy']}\n")
+            f.write(f"Precision: {metrics['precision']}\n")
+            f.write(f"Sensitivity: {metrics['sensitivity']}\n")
+            f.write(f"Specificity: {metrics['specificity']}\n")
+            f.write(f"F1 Score: {metrics['f1_score']}\n")
+            f.write(f"MCC: {metrics['mcc']}\n")
+            f.write(f"Log Likelihood: {metrics['log_likelihood']}\n")
+            f.write(f"BIC: {metrics['bic_score']}\n")
+
+
+def calculate_average_metrics(root_output_folder):
+    """
+    Calculate the average metrics for each approach.
+    :param root_output_folder:
+    :return:
+    """
+    approach_metrics = defaultdict(lambda: defaultdict(float))
+    approach_counts = defaultdict(int)
+
+    for run_folder in root_output_folder.glob('run_*'):
+        for metrics_file in run_folder.glob('*_metrics_*.txt'):
+            approach = metrics_file.name.split('_metrics_')[0]
+            approach_counts[approach] += 1
+
+            with open(metrics_file, 'r') as f:
+                content = f.read()
+                metrics = re.findall(r'(\w+): ([\d.]+)', content)
+                for metric, value in metrics:
+                    approach_metrics[approach][metric] += float(value)
+
+    average_metrics = {}
+    for approach, metrics in approach_metrics.items():
+        count = approach_counts[approach]
+        average_metrics[approach] = {metric: value / count for metric, value in metrics.items()}
+
+    return average_metrics
