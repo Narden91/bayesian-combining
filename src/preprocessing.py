@@ -43,8 +43,6 @@ def data_cleaning_ml(df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
     df_encoded['Sex_Maschile'] = df_encoded['Sex_Maschile'].astype(int)
     df_encoded['Work_Manuale'] = df_encoded['Work_Manuale'].astype(int)
 
-    print(df_encoded.head().to_string()) if verbose else None
-
     return df_encoded
 
 

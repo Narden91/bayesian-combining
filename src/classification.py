@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -37,13 +39,14 @@ def weighted_majority_vote(df: pd.DataFrame, df_proba: pd.DataFrame) -> pd.DataF
     return weight_df['Pred'].astype(int)
 
 
-def stacking_classification(cfg: dict, df: pd.DataFrame, target: str = "Label", seed: int = 42):
+def stacking_classification(cfg: dict, df: pd.DataFrame, target: str = "Label", seed: int = 42, verbose: bool = False):
     """
     Perform stacking on the predictions dataframe.
     :param cfg: dict
     :param df:
     :param target:
     :param seed:
+    :param verbose:
     :return:
     """
     X, y = df.drop(target, axis=1), df[target]
@@ -58,7 +61,7 @@ def stacking_classification(cfg: dict, df: pd.DataFrame, target: str = "Label", 
 
     # Perform cross-validation
     for fold, (train_index, val_index) in enumerate(skf.split(X, y), 1):
-        print(f"Processing fold {fold}")
+        logging.info(f"--------- Fold {fold}--------------") if verbose else None
 
         X_train, X_val = X.iloc[train_index], X.iloc[val_index]
         y_train, y_val = y.iloc[train_index], y.iloc[val_index]
@@ -72,7 +75,7 @@ def stacking_classification(cfg: dict, df: pd.DataFrame, target: str = "Label", 
             y_val=y_val,
             n_trials=cfg.optuna.n_trials,
             scoring='accuracy',
-            verbose=cfg.settings.verbose
+            verbose=verbose
         )
 
         # Store results
@@ -80,23 +83,19 @@ def stacking_classification(cfg: dict, df: pd.DataFrame, target: str = "Label", 
         best_hyperparameters.append(best_params)
         fold_accuracies.append(best_score)
 
-        print(f"Fold {fold} - Best accuracy: {best_score:.4f}")
-        print(f"Best hyperparameters: {best_params}")
-
     # Select the best hyperparameters across all folds
     best_fold = np.argmax(fold_accuracies)
     overall_best_hyperparameters = best_hyperparameters[best_fold]
 
-    if cfg.experiment.stacking_model == "RandomForest":
-        final_model = RandomForestClassifier(**overall_best_hyperparameters, random_state=seed)
-    elif cfg.experiment.stacking_model == "DecisionTree":
-        final_model = DecisionTreeClassifier(**overall_best_hyperparameters, random_state=seed)
-    elif cfg.experiment.stacking_model == "MLP":
+    final_model = None
+
+    if cfg.experiment.stacking_model == "MLP":
         final_model = MLPClassifier(**overall_best_hyperparameters, random_state=seed)
-    elif cfg.experiment.stacking_model == "SVC":
-        final_model = SVC(**overall_best_hyperparameters, random_state=seed)
     elif cfg.experiment.stacking_model == "LogisticRegression":
         final_model = LogisticRegression(**overall_best_hyperparameters, random_state=seed)
+    else:
+        raise ValueError(f"Invalid stacking model: {cfg.experiment.stacking_model}")
+
     final_model.fit(X, y)
 
     return final_model

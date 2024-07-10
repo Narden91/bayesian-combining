@@ -19,19 +19,21 @@ def get_output_folder(output_path, cfg: dict) -> Path:
     """
     root_output_folder = output_path / cfg.data.type
 
-    if cfg.experiment.calibration:
-        root_output_folder = root_output_folder / "Calibration" / cfg.experiment.stacking_method
-    else:
-        root_output_folder = root_output_folder / "No_Calibration" / cfg.experiment.stacking_method
+    root_output_folder = root_output_folder / f"{cfg.model.name}_base_clf"
 
     if cfg.experiment.stacking_method == 'Classification':
-        root_output_folder = root_output_folder / cfg.experiment.stacking_model
+        root_output_folder = root_output_folder / f"{cfg.experiment.stacking_model}_stacking_clf"
     elif cfg.experiment.stacking_method == 'Bayesian':
-        root_output_folder = root_output_folder / f"{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.prior_type}"
+        root_output_folder = (root_output_folder / f"{cfg.experiment.stacking_method}_stacking_clf" /
+                              f"{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.prior_type}")
         if cfg.bayesian_net.use_parents:
             root_output_folder = root_output_folder / f"max_parents_{cfg.experiment.max_parents}"
         else:
             root_output_folder = root_output_folder / "no_max_parents"
+    elif cfg.experiment.stacking_method == 'MajorityVote':
+        root_output_folder = root_output_folder / f"Pure_{cfg.experiment.stacking_method}"
+    elif cfg.experiment.stacking_method == 'WeightedMajorityVote':
+        root_output_folder = root_output_folder / f"Pure_{cfg.experiment.stacking_method}"
     else:
         raise ValueError(f"Invalid stacking method: {cfg.experiment.stacking_method}")
 

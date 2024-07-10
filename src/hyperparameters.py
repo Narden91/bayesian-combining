@@ -1,14 +1,19 @@
+import io
+import sys
+import warnings
+
 import optuna
+from catboost import CatBoostClassifier
 from optuna.pruners import NopPruner
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 
 import optuna
+from xgboost import XGBClassifier
 
 
 def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=100,
@@ -27,92 +32,115 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
         verbose (bool, optional): Whether to display the Optuna logs. Default is False.
 
     Returns:
-        tuple: A tuple containing the best hyperparameters and the best model.
+        tuple: A tuple containing the best hyperparameters, the best model, and the validation score.
     """
 
     def objective(trial):
         if model_name == "RandomForest":
-            hyperparameter_ranges = {
-                'n_estimators': trial.suggest_int('n_estimators', 100, 500),
-                'max_depth': trial.suggest_int('max_depth', 2, 20),
-                'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
-                'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 4)
-            }
+            model = RandomForestClassifier(
+                n_estimators=trial.suggest_int('n_estimators', 100, 500),
+                max_depth=trial.suggest_int('max_depth', 2, 20),
+                min_samples_split=trial.suggest_int('min_samples_split', 2, 10),
+                min_samples_leaf=trial.suggest_int('min_samples_leaf', 1, 4)
+            )
         elif model_name == "DecisionTree":
-            hyperparameter_ranges = {
-                'max_depth': trial.suggest_int('max_depth', 2, 20),
-                'min_samples_split': trial.suggest_int('min_samples_split', 2, 10),
-                'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 4)
-            }
+            model = DecisionTreeClassifier(
+                max_depth=trial.suggest_int('max_depth', 2, 20),
+                min_samples_split=trial.suggest_int('min_samples_split', 2, 10),
+                min_samples_leaf=trial.suggest_int('min_samples_leaf', 1, 4)
+            )
         elif model_name == "LogisticRegression":
-            hyperparameter_ranges = {
-                'C': trial.suggest_loguniform('C', 1e-6, 1e6),
-                'solver': trial.suggest_categorical('solver', ['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga'])
-            }
+            model = LogisticRegression(
+                C=trial.suggest_float('C', 1e-6, 1e6, log=True),
+                solver=trial.suggest_categorical('solver', ['newton-cg', 'lbfgs', 'liblinear', 'sag', 'saga']),
+                max_iter=trial.suggest_int('max_iter', 100, 1000)
+            )
         elif model_name == "SVC":
-            hyperparameter_ranges = {
-                'C': trial.suggest_loguniform('C', 1e-6, 1e6),
-                'kernel': trial.suggest_categorical('kernel', ['linear', 'poly', 'rbf', 'sigmoid']),
-                'gamma': trial.suggest_categorical('gamma', ['scale', 'auto'])
-            }
-        elif model_name == "KNN":
-            hyperparameter_ranges = {
-                'n_neighbors': trial.suggest_int('n_neighbors', 2, 10),
-                'weights': trial.suggest_categorical('weights', ['uniform', 'distance']),
-                'p': trial.suggest_int('p', 1, 2)
-            }
+            model = SVC(
+                C=trial.suggest_loguniform('C', 1e-6, 1e6),
+                kernel=trial.suggest_categorical('kernel', ['linear', 'poly', 'rbf', 'sigmoid']),
+                gamma=trial.suggest_categorical('gamma', ['scale', 'auto'])
+            )
         elif model_name == "MLP":
             hidden_layer_sizes = trial.suggest_categorical('hidden_layer_sizes', ['50', '100', '50,50', '100,50'])
-            hyperparameter_ranges = {
-                'hidden_layer_sizes': tuple(map(int, hidden_layer_sizes.split(','))),
-                'activation': trial.suggest_categorical('activation', ['relu', 'tanh']),
-                'solver': trial.suggest_categorical('solver', ['adam', 'sgd']),
-                'alpha': trial.suggest_float('alpha', 1e-5, 1e-1, log=True),
-                'learning_rate': trial.suggest_categorical('learning_rate', ['constant', 'adaptive']),
-                'max_iter': trial.suggest_int('max_iter', 200, 1000)
-            }
+            model = MLPClassifier(
+                hidden_layer_sizes=tuple(map(int, hidden_layer_sizes.split(','))),
+                activation=trial.suggest_categorical('activation', ['relu', 'tanh']),
+                solver=trial.suggest_categorical('solver', ['adam', 'sgd']),
+                alpha=trial.suggest_float('alpha', 1e-5, 1e-1, log=True),
+                learning_rate=trial.suggest_categorical('learning_rate', ['constant', 'adaptive']),
+                max_iter=trial.suggest_int('max_iter', 200, 1000)
+            )
+        elif model_name == "CatBoost":
+            model = CatBoostClassifier(
+                iterations=trial.suggest_int('iterations', 100, 1000),
+                depth=trial.suggest_int('depth', 2, 12),
+                learning_rate=trial.suggest_float('learning_rate', 1e-6, 1e-1),
+                l2_leaf_reg=trial.suggest_float('l2_leaf_reg', 1e-6, 1e2),
+                verbose=False  # Disable CatBoost's own verbosity
+            )
+        elif model_name == "XGB":
+            model=XGBClassifier(
+                n_estimators=trial.suggest_int('n_estimators', 100, 1000),
+                max_depth=trial.suggest_int('max_depth', 2, 12),
+                learning_rate=trial.suggest_float('learning_rate', 1e-6, 1e-1),
+                gamma=trial.suggest_float('gamma', 0, 1),
+                reg_alpha=trial.suggest_float('reg_alpha', 0, 1),
+                reg_lambda=trial.suggest_float('reg_lambda', 0, 1),
+                subsample=trial.suggest_float('subsample', 0.5, 1),
+                colsample_bytree=trial.suggest_float('colsample_bytree', 0.5, 1),
+                verbosity=0
+            )
         else:
-            raise ValueError("Invalid model type. Choose 'rf' for Random Forest or 'dt' for Decision Tree.")
+            raise ValueError("Invalid model type.")
 
-        hyperparameters = {
-            param_name: param_range
-            for param_name, param_range in hyperparameter_ranges.items()
-        }
+            # Suppress stdout and stderr during model fitting
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = io.StringIO()
+        sys.stderr = io.StringIO()
 
-        model.set_params(**hyperparameters)
-        model.fit(X_train, y_train)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model.fit(X_train, y_train)
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
         if X_val is None or y_val is None:
             return model.score(X_train, y_train)
         else:
             return model.score(X_val, y_val)
 
-    if model_name == "RandomForest":
-        model = RandomForestClassifier()
-    elif model_name == "DecisionTree":
-        model = DecisionTreeClassifier()
-    elif model_name == "LogisticRegression":
-        model = LogisticRegression()
-    elif model_name == "SVC":
-        model = SVC()
-    elif model_name == "KNN":
-        model = KNeighborsClassifier()
-    elif model_name == "MLP":
-        model = MLPClassifier()
-    else:
-        raise ValueError("Invalid model choice.")
-
-    optuna.logging.set_verbosity(optuna.logging.WARNING) # if verbose else None
-    study = optuna.create_study(direction='maximize')
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    study = optuna.create_study(direction='maximize', sampler=optuna.samplers.TPESampler())
     study.optimize(objective, n_trials=n_trials)
 
     best_hyperparameters = study.best_params
     val_score = study.best_value
 
-    if model_name == "MLP":
-        best_hyperparameters['hidden_layer_sizes'] = tuple(
-            map(int, best_hyperparameters['hidden_layer_sizes'].split(',')))
+    # Create the best model with the optimal hyperparameters
+    if model_name == "RandomForest":
+        best_model = RandomForestClassifier(**best_hyperparameters)
+    elif model_name == "DecisionTree":
+        best_model = DecisionTreeClassifier(**best_hyperparameters)
+    elif model_name == "LogisticRegression":
+        best_model = LogisticRegression(**best_hyperparameters)
+    elif model_name == "SVC":
+        best_model = SVC(**best_hyperparameters)
+    elif model_name == "MLP":
+        hidden_layer_sizes = tuple(map(int, best_hyperparameters['hidden_layer_sizes'].split(',')))
+        best_hyperparameters['hidden_layer_sizes'] = hidden_layer_sizes
+        best_model = MLPClassifier(**best_hyperparameters)
+    elif model_name == "CatBoost":
+        best_model = CatBoostClassifier(**best_hyperparameters)
+    elif model_name == "XGB":
+        best_model = XGBClassifier(**best_hyperparameters)
+    else:
+        raise ValueError(f"{model_name} is an invalid model choice.")
 
-    best_model = model.set_params(**best_hyperparameters)
+    # Fit the best model on the entire training set
+    best_model.fit(X_train, y_train)
 
     return best_hyperparameters, best_model, val_score

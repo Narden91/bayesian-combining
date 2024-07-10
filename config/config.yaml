@@ -23,8 +23,8 @@ paths:
   output: output
 
 data:
-  type: ML # ML or DL
-  dataset: All # All, InAir, OnPaper, InAirOnPaper
+  type: ML # ML or DL or ML_orig for cleaning the statistical data
+  dataset: InAirOnPaper # All, InAir, OnPaper, InAirOnPaper
   extension: csv
   separator: ","
   target: Label
@@ -35,7 +35,7 @@ scaling:
   type: Standard # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
 
 model:
-  name: DecisionTree # RandomForest, SVC, LogisticRegression, MLP, XGBoost, LightGBM, CatBoost
+  name: XGB # RandomForest, CatBoost, SVC, DecisionTree, XGB
 
 optuna:
   n_trials: 5
@@ -49,8 +49,8 @@ experiment:
   calibration: True # True or False
   calibration_method: isotonic # isotonic or sigmoid
   calibration_cv: 5
-  stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
-  stacking_model: MLP # MLP, RandomForest, SVC, LogisticRegression
+  stacking_method: Classification # Bayesian, Classification, MajorityVote, WeightedMajorityVote
+  stacking_model: LogisticRegression # MLP, LogisticRegression
 
 
 bayesian_net:

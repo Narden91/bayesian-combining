@@ -22,6 +22,7 @@ def main(cfg: DictConfig):
     project_root = Path(__file__).parent.parent
     data_parent_path = project_root / Path(cfg.paths.source)
     output_path = project_root / Path(cfg.paths.output)
+    output_data_cleaned = project_root / Path(cfg.paths.source) / "ML" / cfg.data.dataset
     data_type = cfg.data.type
     data_folder = data_parent_path / data_type
     data_folder = data_folder / cfg.data.dataset
@@ -84,6 +85,7 @@ def main(cfg: DictConfig):
 
         for file_idx, file in enumerate(file_list):
             task_df = pd.read_csv(file, sep=cfg.data.separator)
+
             train_df, test_df = prep.data_split(task_df, cfg.data.target, cfg.experiment.test_size, seed, verbose)
 
             # sort by Id column
@@ -177,7 +179,7 @@ def main(cfg: DictConfig):
             y_pred_test_proba = best_model.predict_proba(X_test)[:, 1]
             first_level_test_preds_proba[cfg.data.id] = test_df.index.to_list()
             first_level_test_preds_proba[f'Task_{file_idx + 1}'] = y_pred_test_proba
-            break # For Debugging, eliminate later
+            # break # For Debugging, eliminate later
 
         # Clean predictions
         first_level_train_preds = utils.clean_predictions(first_level_train_preds, cfg.data.id)
@@ -198,11 +200,11 @@ def main(cfg: DictConfig):
         stacking_test_data_probabilities = first_level_test_preds_proba.drop(cfg.data.id, axis=1)
 
         # For Debugging, eliminate later
-        stacking_trainings_data = utils.mod_predictions(stacking_trainings_data, cfg.data.target)
-        stacking_trainings_data_proba = utils.mod_proba_predictions(stacking_trainings_data_proba, cfg.data.target)
-        stacking_test_data = utils.mod_predictions(stacking_test_data, cfg.data.target)
-        stacking_test_data_probabilities = utils.mod_proba_predictions(stacking_test_data_probabilities,
-                                                                       cfg.data.target)
+        # stacking_trainings_data = utils.mod_predictions(stacking_trainings_data, cfg.data.target)
+        # stacking_trainings_data_proba = utils.mod_proba_predictions(stacking_trainings_data_proba, cfg.data.target)
+        # stacking_test_data = utils.mod_predictions(stacking_test_data, cfg.data.target)
+        # stacking_test_data_probabilities = utils.mod_proba_predictions(stacking_test_data_probabilities,
+        #                                                                cfg.data.target)
 
         # Map predictions to -1 and 1
         stacking_trainings_data.replace({0: -1}, inplace=True)
@@ -275,7 +277,7 @@ def main(cfg: DictConfig):
             utils.save_metrics_to_file(wmv_metrics, filename_wmv_bn)
             logging.info(f"Weighted Majority Vote using BN, metrics: \n {wmv_metrics}") if verbose else None
         elif cfg.experiment.stacking_method == 'Classification':
-            stacking_model = clf.stacking_classification(cfg, stacking_trainings_data, cfg.data.target, seed)
+            stacking_model = clf.stacking_classification(cfg, stacking_trainings_data, cfg.data.target, seed, verbose)
             y_true_stck = stacking_test_data[cfg.data.target]
             X_test_stck = stacking_test_data.drop(cfg.data.target, axis=1)
             y_pred_stck = stacking_model.predict(X_test_stck)
@@ -289,7 +291,7 @@ def main(cfg: DictConfig):
             y_true_test = stacking_test_data[cfg.data.target]
             stacking_test_data.drop(cfg.data.target, axis=1, inplace=True)
             stacking_test_data_probabilities.drop(cfg.data.target, axis=1, inplace=True)
-            mv_pred = clf.majority_vote(stacking_test_data, stacking_test_data_probabilities)
+            mv_pred = clf.majority_vote(stacking_test_data)
             logging.info(f"Majority Vote predictions: \n {mv_pred}") if verbose else None
             mv_metrics = utils.compute_metrics(y_true_test, mv_pred)
             filename_mv = run_folder / f"weighted_majority_vote_metrics_{run + 1}.txt"
