@@ -3,7 +3,7 @@ import random
 import time
 import hydra
 import numpy as np
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import logging
 from pathlib import Path
 import pandas as pd
@@ -351,6 +351,16 @@ def main(cfg: DictConfig):
     formatted_time = "{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds + milliseconds / 1000)
 
     logging.info(f"Elapsed time: {formatted_time} seconds") if verbose else None
+
+    # save the time taken to run the experiment
+    time_file = root_output_folder / "Execution_time.txt"
+    with open(time_file, 'w') as f:
+        f.write(f"Elapsed time: {formatted_time} seconds")
+
+    # Save the configuration file
+    config_file = root_output_folder / "config.yaml"
+    with open(config_file, 'w') as f:
+        OmegaConf.save(cfg, f)
 
 
 if __name__ == "__main__":
