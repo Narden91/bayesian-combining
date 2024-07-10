@@ -109,9 +109,10 @@ def main(cfg: DictConfig):
             X_test = test_df.drop(columns=cfg.data.target)
             y_test = test_df[cfg.data.target]
 
-            best_val_score = 0
-            best_model = None
-            scaler_opt = None
+            # Preprocess the data
+            if data_type == "ML":
+                X_train, scaler_cv = prep.data_scaling(X_train, cfg.data.id, cfg.scaling.type, verbose)
+                X_test = prep.apply_scaling(X_test, scaler_cv, cfg.data.id, verbose)
 
             val_scores = []
             models = []
@@ -125,13 +126,7 @@ def main(cfg: DictConfig):
 
                 X_train_cv, X_val = X_train.iloc[train_index], X_train.iloc[val_index]
                 y_train_cv, y_val = y_train.iloc[train_index], y_train.iloc[val_index]
-
                 all_val_indices.update(val_index)
-
-                # Preprocess the data
-                if data_type == "ML":
-                    X_train_cv, scaler_cv = prep.data_scaling(X_train_cv, cfg.data.id, cfg.scaling.type, verbose)
-                    X_val = prep.apply_scaling(X_val, scaler_cv, cfg.data.id, verbose)
 
                 # Hyperparameter tuning using optuna
                 best_hyperparameters, best_model_cv, _ = hp.hyperparameter_tuning(cfg.model.name, X_train_cv,
@@ -160,16 +155,11 @@ def main(cfg: DictConfig):
             logging.info("------------------------------------------------") if verbose else None
             logging.info(f"Average validation score: {avg_val_score}") if verbose else None
 
-            if data_type == "ML":
-                X_train, scaler_opt = prep.data_scaling(X_train, cfg.data.id, cfg.scaling.type, verbose)
-                X_test = prep.apply_scaling(X_test, scaler_opt, cfg.data.id, verbose)
-
             # Perform hyperparameter search on the entire training dataset
             best_hyperparameters, best_model, _ = hp.hyperparameter_tuning(cfg.model.name, X_train, y_train,
                                                                            None, None,
                                                                            n_trials=cfg.optuna.n_trials,
                                                                            verbose=verbose)
-
             best_model.fit(X_train, y_train)
 
             if cfg.experiment.calibration:

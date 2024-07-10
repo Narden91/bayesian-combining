@@ -100,7 +100,7 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
     elif model_name == "MLP":
         model = MLPClassifier()
     else:
-        raise ValueError("Invalid model. Please choose 'RandomForestClassifier' or 'DecisionTreeClassifier'.")
+        raise ValueError("Invalid model choice.")
 
     optuna.logging.set_verbosity(optuna.logging.WARNING) # if verbose else None
     study = optuna.create_study(direction='maximize')
