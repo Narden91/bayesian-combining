@@ -261,6 +261,13 @@ def main(cfg: DictConfig):
             y_true_stck = stacking_test_data[cfg.data.target]
             logging.info(f"Stacking test data: \n {stacking_test_data}") if verbose else None
 
+            # Save the columns selected by the Bayesian Network
+            selected_columns_file = run_folder / f"Markov_Blanket_{run + 1}.txt"
+            with open(selected_columns_file, 'w') as f:
+                f.write("Task in the Markov Blanket:\n")
+                for column in selected_columns:
+                    f.write(f"{column}\n")
+
             # Perform Majority Vote
             mv_pred = clf.majority_vote(stacking_test_data)
             logging.info(f"Majority Vote predictions: \n {mv_pred}") if verbose else None
