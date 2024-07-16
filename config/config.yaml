@@ -24,7 +24,7 @@ paths:
 
 data:
   type: ML # ML or DL or ML_orig for cleaning the statistical data
-  dataset: InAirOnPaper # All, InAir, OnPaper, InAirOnPaper
+  dataset: InAirOnPaper # All, InAir, OnPaper, InAirOnPaper , CNN1, CNN2, ...
   extension: csv
   separator: ","
   target: Label

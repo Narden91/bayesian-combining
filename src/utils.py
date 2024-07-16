@@ -17,7 +17,7 @@ def get_output_folder(output_path, cfg: dict) -> Path:
     :param cfg: dict
     :return:
     """
-    root_output_folder = output_path / cfg.data.type
+    root_output_folder = output_path / cfg.data.type / cfg.data.dataset
 
     root_output_folder = root_output_folder / f"{cfg.model.name}_base_clf"
 

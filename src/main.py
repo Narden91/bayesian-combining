@@ -22,7 +22,9 @@ def main(cfg: DictConfig):
     project_root = Path(__file__).parent.parent
     data_parent_path = project_root / Path(cfg.paths.source)
     output_path = project_root / Path(cfg.paths.output)
-    output_data_cleaned = project_root / Path(cfg.paths.source) / "ML" / cfg.data.dataset
+    if not output_path.exists():
+        os.makedirs(output_path)
+    # output_data_cleaned = project_root / Path(cfg.paths.source) / "ML" / cfg.data.dataset
     data_type = cfg.data.type
     data_folder = data_parent_path / data_type
     data_folder = data_folder / cfg.data.dataset
@@ -39,9 +41,6 @@ def main(cfg: DictConfig):
     if not data_folder.exists():
         logging.error(f"Data folder {data_folder} does not exist.")
         return
-
-    if not output_path.exists():
-        os.makedirs(output_path)
     # endregion
 
     # Load the CSV files
