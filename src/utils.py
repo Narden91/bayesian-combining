@@ -24,12 +24,13 @@ def get_output_folder(output_path, cfg: dict) -> Path:
     if cfg.experiment.stacking_method == 'Classification':
         root_output_folder = root_output_folder / f"{cfg.experiment.stacking_model}_stacking_clf"
     elif cfg.experiment.stacking_method == 'Bayesian':
-        root_output_folder = (root_output_folder / f"{cfg.experiment.stacking_method}_stacking_clf" /
-                              f"{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.prior_type}")
-        if cfg.bayesian_net.use_parents:
-            root_output_folder = root_output_folder / f"max_parents_{cfg.experiment.max_parents}"
-        else:
-            root_output_folder = root_output_folder / "no_max_parents"
+        root_output_folder = root_output_folder / f"{cfg.experiment.stacking_method}_stacking_clf"
+        # f"{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.prior_type}")
+
+        # if cfg.bayesian_net.use_parents:
+        #     root_output_folder = root_output_folder / f"max_parents_{cfg.experiment.max_parents}"
+        # else:
+        #     root_output_folder = root_output_folder / "no_max_parents"
     elif cfg.experiment.stacking_method == 'MajorityVote':
         root_output_folder = root_output_folder / f"Pure_{cfg.experiment.stacking_method}"
     elif cfg.experiment.stacking_method == 'WeightedMajorityVote':
@@ -38,6 +39,32 @@ def get_output_folder(output_path, cfg: dict) -> Path:
         raise ValueError(f"Invalid stacking method: {cfg.experiment.stacking_method}")
 
     return root_output_folder
+
+
+def build_data_paths(cfg, data_parent_path):
+    """
+    Build the data paths based on the configuration parameters.
+    :param cfg:
+    :param data_parent_path:
+    :return:
+    """
+    paths = []
+
+    # Build the first path
+    data_type = cfg.data.type
+    data_folder = data_parent_path / data_type
+    data_folder = data_folder / cfg.data.dataset
+    paths.append(data_folder)
+
+    # Check if type_2 is not None
+    if cfg.data.type_2 != "None":
+        # Build the second path
+        data_type_2 = cfg.data.type_2
+        data_folder_2 = data_parent_path / data_type_2
+        data_folder_2 = data_folder_2 / cfg.data.dataset2
+        paths.append(data_folder_2)
+
+    return paths
 
 
 def load_csv_file(folder_path: str = "", extension=",") -> list[Path]:
@@ -74,6 +101,53 @@ def clean_predictions(df: pd.DataFrame, id_column: str = "Id") -> pd.DataFrame:
     cleaned_df.reset_index(drop=True, inplace=True)
 
     return cleaned_df
+
+
+def rename_task_columns(df: pd.DataFrame, suffix: str = 'ML') -> pd.DataFrame:
+    """
+    Renames 'Task_' columns in the given dataframe by adding a suffix.
+
+    Args:
+    df (pd.DataFrame): Input dataframe
+    suffix (str): Suffix to add to 'Task_' columns. Default is '_ML'
+
+    Returns:
+    pd.DataFrame: Dataframe with renamed columns
+    """
+    # Create a dictionary for renaming
+    rename_dict = {col: f"{col}_{suffix}" for col in df.columns if col.startswith('Task_')}
+
+    # Rename the columns
+    df_renamed = df.rename(columns=rename_dict)
+
+    return df_renamed
+
+
+def merge_task_dataframes(df1: pd.DataFrame, df2: pd.DataFrame, id_column: str = 'Id',
+                          target_column: str = 'Label') -> pd.DataFrame:
+    """
+    Merges two dataframes by adding the 'Task_' columns from the second dataframe to the first,
+    and moves the 'Label' column to the end of the resulting dataframe.
+
+    Args:
+    df1 (pd.DataFrame): First input dataframe (e.g., with ML tasks)
+    df2 (pd.DataFrame): Second input dataframe (e.g., with DL tasks)
+
+    Returns:
+    pd.DataFrame: Merged dataframe with all 'Task_' columns and 'Label' at the end
+    """
+    # Identify 'Task_' columns in the second dataframe
+    task_columns_df2 = [col for col in df2.columns if col.startswith('Task_')]
+
+    # Merge the dataframes on 'Id' column
+    merged_df = pd.merge(df1, df2[[id_column] + task_columns_df2], on=id_column, how='left')
+
+    # Move 'Label' column to the end
+    if target_column in merged_df.columns:
+        label_column = merged_df.pop(target_column)
+        merged_df[target_column] = label_column
+
+    return merged_df
 
 
 def mod_predictions(df: pd.DataFrame, target: str = "Label") -> pd.DataFrame:

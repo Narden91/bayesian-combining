@@ -14,21 +14,18 @@ import hyperparameters as hp
 import preprocessing as prep
 import bayesian_network as bn
 import classification as clf
+import main_process as mp
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
 def main(cfg: DictConfig):
-    # region Folder Paths
+    # region Folder Path
     project_root = Path(__file__).parent.parent
     data_parent_path = project_root / Path(cfg.paths.source)
     output_path = project_root / Path(cfg.paths.output)
     if not output_path.exists():
         os.makedirs(output_path)
     # output_data_cleaned = project_root / Path(cfg.paths.source) / "ML" / cfg.data.dataset
-    data_type = cfg.data.type
-    data_folder = data_parent_path / data_type
-    data_folder = data_folder / cfg.data.dataset
-    # endregion
 
     # region Experiment Settings
     num_runs = cfg.settings.runs
@@ -37,36 +34,49 @@ def main(cfg: DictConfig):
     debug = cfg.settings.debug
     # endregion
 
-    # region Folder Check
-    if not data_folder.exists():
-        logging.error(f"Data folder {data_folder} does not exist.")
+    data_paths = utils.build_data_paths(cfg, data_parent_path)
+
+    # Validate paths and determine the analysis type
+    valid_paths = [path for path in data_paths if path.exists()]
+
+    if len(valid_paths) == 0:
+        logging.error("No valid data folders found.")
         return
-    # endregion
+    elif len(valid_paths) == 1:
+        if cfg.data.type not in ["ML", "DL"]:
+            logging.error(f"Invalid data type {cfg.data.type} for single path.")
+            return
+        analysis_type = cfg.data.type
+    elif len(valid_paths) == 2:
+        analysis_type = "Combined"
+    else:
+        logging.error("Unexpected number of valid data paths.")
+        return
 
     # Load the CSV files
-    file_list = utils.load_csv_file(data_folder, cfg.data.extension)
+    file_list = utils.load_csv_file(valid_paths[0], cfg.data.extension)
+    file_list_comb = utils.load_csv_file(valid_paths[1], cfg.data.extension) if len(valid_paths) > 1 else None
 
     sample_df = pd.read_csv(file_list[0], sep=cfg.data.separator)
     num_subjects = sample_df.shape[0]
     num_tasks = len(file_list)
 
-    # Stacking placeholders
-    first_level_train_preds = np.zeros((num_subjects, num_tasks))
-    first_level_test_preds = np.zeros((int(num_subjects * cfg.experiment.test_size) + 1, num_tasks))
+    train_predictions = pd.DataFrame(index=sample_df[cfg.data.id],
+                                     columns=[f'Task_{i + 1}' for i in range(num_tasks)])
 
-    first_level_train_preds = pd.DataFrame(index=sample_df[cfg.data.id],
-                                           columns=[f'Task_{i + 1}' for i in range(num_tasks)])
-    first_level_train_preds_proba = pd.DataFrame(index=sample_df[cfg.data.id],
-                                                 columns=[f'Task_{i + 1}' for i in range(num_tasks)])
-    first_level_test_preds = pd.DataFrame(index=None,
-                                          columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
-    first_level_test_preds_proba = pd.DataFrame(index=None,
-                                                columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
+    train_probabilities = pd.DataFrame(index=sample_df[cfg.data.id],
+                                       columns=[f'Task_{i + 1}' for i in range(num_tasks)])
+
+    test_predictions = pd.DataFrame(index=None,
+                                    columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
+
+    test_probabilities = pd.DataFrame(index=None,
+                                      columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
 
     logging.info(f"Bayesian Network Analysis Experiment starting...") if verbose else None
     logging.info(f"Number of runs: {num_runs}") if verbose else None
     logging.info(f"Tasks: {num_tasks}") if verbose else None
-    logging.info(f"Data Type: {data_type} ") if verbose else None
+    logging.info(f"Analysis Type: {analysis_type}") if verbose else None
     logging.info(f"Number of Folds: {cfg.experiment.folds}") if verbose else None
 
     root_output_folder = utils.get_output_folder(output_path, cfg)
@@ -82,128 +92,34 @@ def main(cfg: DictConfig):
         logging.info(f"Run {run + 1}")
         logging.info(f"Seed: {seed}") if verbose else None
 
-        for file_idx, file in enumerate(file_list):
-            task_df = pd.read_csv(file, sep=cfg.data.separator)
-
-            train_df, test_df = prep.data_split(task_df, cfg.data.target, cfg.experiment.test_size, seed, verbose)
-
-            # sort by Id column
-            train_df.sort_values(by=cfg.data.id, inplace=True)
-            test_df.sort_values(by=cfg.data.id, inplace=True)
-
-            # set Id column as index and call it Id_index but keep it as a column
-            train_df.set_index(cfg.data.id, inplace=True, drop=False)
-            train_df.index.name = cfg.data.id_index
-
-            test_df.set_index(cfg.data.id, inplace=True, drop=False)
-            test_df.index.name = cfg.data.id_index
-
-            # Check correct split
-            test_ids = test_df[cfg.data.id].values
-            train_ids = train_df[cfg.data.id].values
-            common_ids = np.intersect1d(test_ids, train_ids)
-            if common_ids.size > 0:
-                raise ValueError(f"Test set contains Ids also present in the train set: {common_ids}")
-
-            X_train = train_df.drop(columns=cfg.data.target)
-            y_train = train_df[cfg.data.target]
-
-            X_test = test_df.drop(columns=cfg.data.target)
-            y_test = test_df[cfg.data.target]
-
-            # Preprocess the data
-            if data_type == "ML":
-                X_train, scaler_cv = prep.data_scaling(X_train, cfg.data.id, cfg.scaling.type, verbose)
-                X_test = prep.apply_scaling(X_test, scaler_cv, cfg.data.id, verbose)
-
-            val_scores = []
-            models = []
-            all_val_indices = set()
-
-            # Stratified K-Fold Cross Validation to avoid class imbalance into folds
-            skf = StratifiedKFold(n_splits=cfg.experiment.folds, shuffle=True, random_state=seed)
-
-            for fold, (train_index, val_index) in enumerate(skf.split(X_train, y_train), 1):
-                logging.info(f"--------- Fold {fold}--------------") if verbose else None
-
-                X_train_cv, X_val = X_train.iloc[train_index], X_train.iloc[val_index]
-                y_train_cv, y_val = y_train.iloc[train_index], y_train.iloc[val_index]
-                all_val_indices.update(val_index)
-
-                # Hyperparameter tuning using optuna
-                best_hyperparameters, best_model_cv, _ = hp.hyperparameter_tuning(cfg.model.name, X_train_cv,
-                                                                                  y_train_cv,
-                                                                                  X_val, y_val,
-                                                                                  n_trials=cfg.optuna.n_trials,
-                                                                                  verbose=verbose)
-
-                val_pred = best_model_cv.predict(X_val)
-                val_proba = best_model_cv.predict_proba(X_val)[:, 1]
-                first_level_train_preds.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_pred
-                first_level_train_preds_proba.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_proba
-
-                # Accuracy score but can be changed to other metrics
-                val_score = utils.compute_metrics(y_val, val_pred)['accuracy']
-                val_scores.append(val_score)
-                models.append(best_model_cv)
-
-                if verbose:
-                    logging.info(f"Best hyperparameters: {best_hyperparameters}")
-                    logging.info(f"Validation score: {val_score}")
-            assert len(all_val_indices) == len(X_train), "Folds do not contain all different samples"
-
-            # Average validation score
-            avg_val_score = np.mean(val_scores)
-            logging.info("------------------------------------------------") if verbose else None
-            logging.info(f"Average validation score: {avg_val_score}") if verbose else None
-
-            # Perform hyperparameter search on the entire training dataset
-            best_hyperparameters, best_model, _ = hp.hyperparameter_tuning(cfg.model.name, X_train, y_train,
-                                                                           None, None,
-                                                                           n_trials=cfg.optuna.n_trials,
-                                                                           verbose=verbose)
-            best_model.fit(X_train, y_train)
-
-            if cfg.experiment.calibration:
-                logging.info("Calibrating model...")
-                best_model = CalibratedClassifierCV(estimator=best_model,
-                                                    method=cfg.experiment.calibration_method,
-                                                    cv=cfg.experiment.calibration_cv)
-                best_model.fit(X_train, y_train)
-
-            y_pred_test = best_model.predict(X_test)
-            first_level_test_preds[cfg.data.id] = test_df.index.to_list()
-            first_level_test_preds[f'Task_{file_idx + 1}'] = y_pred_test
-
-            y_pred_test_proba = best_model.predict_proba(X_test)[:, 1]
-            first_level_test_preds_proba[cfg.data.id] = test_df.index.to_list()
-            first_level_test_preds_proba[f'Task_{file_idx + 1}'] = y_pred_test_proba
-            # break # For Debugging, eliminate later
-
-        # Clean predictions
-        first_level_train_preds = utils.clean_predictions(first_level_train_preds, cfg.data.id)
-        first_level_train_preds['Label'] = y_train.to_numpy()
-        first_level_train_preds_proba = utils.clean_predictions(first_level_train_preds_proba, cfg.data.id)
-        first_level_train_preds_proba['Label'] = y_train.to_numpy()
-
-        first_level_test_preds['Label'] = y_test.to_numpy()
-        first_level_test_preds.sort_values(by=cfg.data.id, inplace=True)
-
-        first_level_test_preds_proba['Label'] = y_test.to_numpy()
-        first_level_test_preds_proba.sort_values(by=cfg.data.id, inplace=True)
+        if analysis_type == "ML":
+            logging.info(f"Machine Learning Analysis") if verbose else None
+            train_preds, train_probs, test_preds, test_probs = mp.process_tasks(file_list, cfg, seed, verbose,
+                                                                                cfg.data.type,
+                                                                                train_predictions, train_probabilities,
+                                                                                test_predictions, test_probabilities)
+        elif analysis_type == "DL":
+            logging.info(f"Deep Learning Analysis") if verbose else None
+            train_preds, train_probs, test_preds, test_probs = mp.process_tasks(file_list, cfg, seed, verbose,
+                                                                                cfg.data.type,
+                                                                                train_predictions, train_probabilities,
+                                                                                test_predictions, test_probabilities)
+        elif analysis_type == "Combined":
+            logging.info(f"Combined Analysis") if verbose else None
+            train_preds, train_probs, test_preds, test_probs = mp.combined_analysis(file_list, file_list_comb,
+                                                                                    cfg, seed, verbose,
+                                                                                    train_predictions,
+                                                                                    train_probabilities,
+                                                                                    test_predictions,
+                                                                                    test_probabilities)
+        else:
+            raise ValueError(f"Analysis type {analysis_type} not recognized.")
 
         # Prepare stacking data
-        stacking_trainings_data = first_level_train_preds.drop(cfg.data.id, axis=1)
-        stacking_trainings_data_proba = first_level_train_preds_proba.drop(cfg.data.id, axis=1)
-        stacking_test_data = first_level_test_preds.drop(cfg.data.id, axis=1)
-        stacking_test_data_probabilities = first_level_test_preds_proba.drop(cfg.data.id, axis=1)
-
-        # For Debugging, eliminate later
-        # stacking_trainings_data = utils.mod_predictions(stacking_trainings_data, cfg.data.target)
-        # stacking_trainings_data_proba = utils.mod_proba_predictions(stacking_trainings_data_proba, cfg.data.target)
-        # stacking_test_data = utils.mod_predictions(stacking_test_data, cfg.data.target)
-        # stacking_test_data_probabilities = utils.mod_proba_predictions(stacking_test_data_probabilities,
-        #                                                                cfg.data.target)
+        stacking_trainings_data = train_preds.drop(cfg.data.id, axis=1)
+        stacking_trainings_data_proba = train_probs.drop(cfg.data.id, axis=1)
+        stacking_test_data = test_preds.drop(cfg.data.id, axis=1)
+        stacking_test_data_probabilities = test_probs.drop(cfg.data.id, axis=1)
 
         # Map predictions to -1 and 1
         stacking_trainings_data.replace({0: -1}, inplace=True)

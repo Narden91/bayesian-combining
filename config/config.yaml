@@ -23,8 +23,10 @@ paths:
   output: output
 
 data:
-  type: ML # ML or DL or ML_orig for cleaning the statistical data
+  type: DL # ML or DL or ML_orig for cleaning the statistical data
   dataset: InAirOnPaper # All, InAir, OnPaper, InAirOnPaper , CNN1, CNN2, ...
+  type_2: ML # ML or DL or None
+  dataset2: InAirOnPaper # Dataset da combinare con il primo
   extension: csv
   separator: ","
   target: Label
