@@ -35,6 +35,7 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
                test_predictions, and test_probabilities.
     """
     for file_idx, file in enumerate(file_list):
+        logging.info(f"-------------------Task {file_idx + 1}-------------------") if verbose else None
         task_df = pd.read_csv(file, sep=cfg.data.separator)
 
         train_df, test_df = prep.data_split(task_df, cfg.data.target, cfg.experiment.test_size, seed, verbose)
@@ -50,7 +51,7 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
         test_df.set_index(cfg.data.id, inplace=True, drop=False)
         test_df.index.name = cfg.data.id_index
 
-        logging.info(f"Task {file_idx + 1} - Train set: {train_df.shape[0]} samples, ")
+        logging.info(f"Task {file_idx + 1} - Train set: {train_df.shape[0]} samples, ") if verbose else None
         logging.info(f"Task {file_idx + 1} - Test set: {test_df.shape[0]} samples") if verbose else None
 
         # Check correct split
@@ -120,7 +121,7 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
         best_model.fit(X_train, y_train)
 
         if cfg.experiment.calibration:
-            logging.info("Calibrating model...")
+            logging.info("Calibrating model...") if verbose else None
             best_model = CalibratedClassifierCV(
                 estimator=best_model,
                 method=cfg.experiment.calibration_method,

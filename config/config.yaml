@@ -15,7 +15,7 @@ hydra:
 settings:
   seed: 42
   runs: 1
-  verbose: True
+  verbose: False
   debug: False
 
 paths:
@@ -23,10 +23,10 @@ paths:
   output: output
 
 data:
-  type: DL # ML or DL or ML_orig for cleaning the statistical data
+  type: ML # ML or DL or ML_orig for cleaning the statistical data
   dataset: InAirOnPaper # All, InAir, OnPaper, InAirOnPaper , CNN1, CNN2, ...
-  type_2: ML # ML or DL or None
-  dataset2: InAirOnPaper # Dataset da combinare con il primo
+  type_2: None # ML or DL or None # DA USARE IN CASO DI COMBINING DATASET
+  dataset2: None # Dataset da combinare con il primo
   extension: csv
   separator: ","
   target: Label
@@ -47,7 +47,7 @@ experiment:
   test_size: 0.5
   test_size_final: 0.2
   val_size: 0.2
-  folds: 2
+  folds: 5
   calibration: True # True or False
   calibration_method: isotonic # isotonic or sigmoid
   calibration_cv: 5

@@ -73,11 +73,11 @@ def main(cfg: DictConfig):
     test_probabilities = pd.DataFrame(index=None,
                                       columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
 
-    logging.info(f"Bayesian Network Analysis Experiment starting...") if verbose else None
-    logging.info(f"Number of runs: {num_runs}") if verbose else None
-    logging.info(f"Tasks: {num_tasks}") if verbose else None
-    logging.info(f"Analysis Type: {analysis_type}") if verbose else None
-    logging.info(f"Number of Folds: {cfg.experiment.folds}") if verbose else None
+    logging.info(f"Bayesian Network Analysis Experiment starting...")
+    logging.info(f"Number of runs: {num_runs}")
+    logging.info(f"Tasks: {num_tasks}")
+    logging.info(f"Analysis Type: {analysis_type}")
+    logging.info(f"Number of Folds: {cfg.experiment.folds}")
 
     root_output_folder = utils.get_output_folder(output_path, cfg)
 
@@ -85,12 +85,10 @@ def main(cfg: DictConfig):
     start_time = time.time()
 
     for run in range(num_runs):
-        logging.info(f"------------------------------------------------")
         run_folder = root_output_folder / f"run_{run + 1}"
         os.makedirs(run_folder) if not run_folder.exists() else None
         seed = global_seed + run
-        logging.info(f"Run {run + 1}")
-        logging.info(f"Seed: {seed}") if verbose else None
+        logging.info(f"-------------------Run {run + 1} | Seed: {seed}-------------------")
 
         if analysis_type == "ML":
             logging.info(f"Machine Learning Analysis") if verbose else None
@@ -141,6 +139,8 @@ def main(cfg: DictConfig):
         logging.info(f"Stacking test data predictions: \n {stacking_test_data}") if debug else None
         logging.info(f"Stacking test data probabilities: \n {stacking_test_data_probabilities}") if debug else None
 
+        logging.info(f"-------------------Second Level Classification for Run {run + 1} -------------------")
+
         if cfg.experiment.stacking_method == 'Bayesian':
             (selected_columns, predictions_train, predictions_test, bic_score,
              log_likelihood_train, log_likelihood_test) = bn.bayesian_network(cfg, run, run_folder,
@@ -155,7 +155,7 @@ def main(cfg: DictConfig):
             train_metrics['bic_score'] = bic_score
             train_metrics['log_likelihood'] = log_likelihood_train
             filename_train = run_folder / f"bayesian_network_train_metrics_{run + 1}.txt"
-            utils.save_metrics_bn_to_file(train_metrics, filename_train)
+            utils.save_metrics_bn_to_file(train_metrics, filename_train, verbose)
             logging.info(f"Bayesian Network training metrics: \n {train_metrics}") if verbose else None
 
             # Evaluate results on test data
@@ -165,7 +165,7 @@ def main(cfg: DictConfig):
             test_metrics['bic_score'] = bic_score
             test_metrics['log_likelihood'] = log_likelihood_test
             filename_test = run_folder / f"bayesian_network_test_metrics_{run + 1}.txt"
-            utils.save_metrics_bn_to_file(test_metrics, filename_test)
+            utils.save_metrics_bn_to_file(test_metrics, filename_test, verbose)
             logging.info(f"Bayesian Network test metrics: \n {test_metrics}") if verbose else None
 
             # Filter the predictions based on the selected tasks from the Bayesian Network
@@ -231,7 +231,6 @@ def main(cfg: DictConfig):
             logging.info(f"Weighted Majority Vote, using first level predictions, "
                          f"metrics: \n {wmv_metrics}") if verbose else None
         seed += 1
-        break  # For Debugging, eliminate later
 
     # Calculate average metrics across all runs
     average_metrics = utils.calculate_average_metrics(root_output_folder)
@@ -265,7 +264,7 @@ def main(cfg: DictConfig):
     milliseconds = round(milliseconds * 1000)
     formatted_time = "{:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds + milliseconds / 1000)
 
-    logging.info(f"Elapsed time: {formatted_time} seconds") if verbose else None
+    logging.info(f"Elapsed time: {formatted_time} seconds")
 
     # save the time taken to run the experiment
     time_file = root_output_folder / "Execution_time.txt"

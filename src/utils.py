@@ -54,6 +54,11 @@ def build_data_paths(cfg, data_parent_path):
     data_type = cfg.data.type
     data_folder = data_parent_path / data_type
     data_folder = data_folder / cfg.data.dataset
+
+    # Check if data_folder exists
+    if not data_folder.exists():
+        logging.error(f"Data folder {data_folder} does not exist.")
+        return paths
     paths.append(data_folder)
 
     # Check if type_2 is not None
@@ -273,16 +278,17 @@ def save_metrics_to_file(metrics: dict, filename: str) -> None:
             f.write(f"MCC: {metrics['mcc']}\n")
 
 
-def save_metrics_bn_to_file(metrics: dict, filename: str) -> None:
+def save_metrics_bn_to_file(metrics: dict, filename: str, verbose: bool = False) -> None:
     """
     Save the metrics of the BN to a text file.
     :param metrics:
     :param filename:
+    :param verbose:
     :return:
     """
     # class_labels = ['Class 0', 'Class 1']
     # formatted_cm = format_confusion_matrix(metrics['confusion_matrix'], class_labels)
-    logging.info(f"Metrics: {metrics}")
+    logging.info(f"Metrics: {metrics}") if verbose else None
 
     # check if the file exists otherwise create it
     if not os.path.exists(filename):
