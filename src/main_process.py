@@ -60,18 +60,15 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
             y = task_df[cfg.data.target]
 
             train_indices, test_indices = train_test_split(
-                np.arange(len(task_df)),
-                test_size=cfg.experiment.test_size,
-                random_state=seed,
-                stratify=y
-            )
+                np.arange(len(task_df)),test_size=cfg.experiment.test_size, random_state=seed, stratify=y)
 
             # Store the IDs as sets for validation
             train_ids = set(task_df.iloc[train_indices][cfg.data.id].values)
             test_ids = set(task_df.iloc[test_indices][cfg.data.id].values)
 
             logging.info(
-                f"Train/Test split determined. Train size: {len(train_indices)}, Test size: {len(test_indices)}")
+                f"Train/Test split determined. Train size: {len(train_indices)}, Test size: {len(test_indices)}") \
+                if verbose else None
 
         # Apply the split to the current file
         train_df = task_df.iloc[train_indices].copy()
