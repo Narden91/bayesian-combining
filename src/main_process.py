@@ -3,11 +3,12 @@ import os
 from pathlib import Path
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.calibration import CalibratedClassifierCV
 import preprocessing as prep
 import hyperparameters as hp
 import utils
+import classification as clf
 
 
 def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
@@ -34,36 +35,72 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
         tuple: Contains four DataFrames - train_predictions, train_probabilities,
                test_predictions, and test_probabilities.
     """
+    train_indices = None
+    test_indices = None
+    train_ids = None
+    test_ids = None
+
     for file_idx, file in enumerate(file_list):
         logging.info(f"-------------------Task {file_idx + 1}-------------------") if verbose else None
         task_df = pd.read_csv(file, sep=cfg.data.separator)
 
-        train_df, test_df = prep.data_split(task_df, cfg.data.target, cfg.experiment.test_size, seed, verbose)
+        # Perform initial checks
+        if cfg.data.target not in task_df.columns:
+            raise ValueError(f"Target column {cfg.data.target} not found in the task data")
+        if cfg.data.id not in task_df.columns:
+            raise ValueError(f"Id column {cfg.data.id} not found in the task data")
+        if not task_df[cfg.data.id].is_unique:
+            raise ValueError(f"Id column {cfg.data.id} is not unique")
+        if task_df.shape[0] != 174:
+            raise ValueError(f"Task data does not contain 174 samples")
 
-        # sort by Id column
+        # For the first file, determine the train/test split
+        if file_idx == 0:
+            X = task_df.drop(columns=[cfg.data.target])
+            y = task_df[cfg.data.target]
+
+            train_indices, test_indices = train_test_split(
+                np.arange(len(task_df)),
+                test_size=cfg.experiment.test_size,
+                random_state=seed,
+                stratify=y
+            )
+
+            # Store the IDs as sets for validation
+            train_ids = set(task_df.iloc[train_indices][cfg.data.id].values)
+            test_ids = set(task_df.iloc[test_indices][cfg.data.id].values)
+
+            logging.info(
+                f"Train/Test split determined. Train size: {len(train_indices)}, Test size: {len(test_indices)}")
+
+        # Apply the split to the current file
+        train_df = task_df.iloc[train_indices].copy()
+        test_df = task_df.iloc[test_indices].copy()
+
+        # Verify that the split is consistent with the first file
+        current_train_ids = set(train_df[cfg.data.id].values)
+        current_test_ids = set(test_df[cfg.data.id].values)
+
+        if current_train_ids != train_ids or current_test_ids != test_ids:
+            raise ValueError(f"Inconsistent train/test split in file {file_idx + 1}")
+
+        # Sort DataFrames by ID
         train_df.sort_values(by=cfg.data.id, inplace=True)
         test_df.sort_values(by=cfg.data.id, inplace=True)
 
-        # set Id column as index and call it Id_index but keep it as a column
+        # Set ID as index
         train_df.set_index(cfg.data.id, inplace=True, drop=False)
         train_df.index.name = cfg.data.id_index
-
         test_df.set_index(cfg.data.id, inplace=True, drop=False)
         test_df.index.name = cfg.data.id_index
 
-        logging.info(f"Task {file_idx + 1} - Train set: {train_df.shape[0]} samples, ") if verbose else None
+        # Log info about the split
+        logging.info(f"Task {file_idx + 1} - Train set: {train_df.shape[0]} samples") if verbose else None
         logging.info(f"Task {file_idx + 1} - Test set: {test_df.shape[0]} samples") if verbose else None
 
-        # Check correct split
-        test_ids = test_df[cfg.data.id].values
-        train_ids = train_df[cfg.data.id].values
-        common_ids = np.intersect1d(test_ids, train_ids)
-        if common_ids.size > 0:
-            raise ValueError(f"Test set contains Ids also present in the train set: {common_ids}")
-
+        # Prepare data for modeling
         X_train = train_df.drop(columns=cfg.data.target)
         y_train = train_df[cfg.data.target]
-
         X_test = test_df.drop(columns=cfg.data.target)
         y_test = test_df[cfg.data.target]
 
@@ -84,27 +121,33 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
 
             X_train_cv, X_val = X_train.iloc[train_index], X_train.iloc[val_index]
             y_train_cv, y_val = y_train.iloc[train_index], y_train.iloc[val_index]
+
+            # Check if val + train_cv has the same number of samples as X_train
+            if len(X_train_cv) + len(X_val) != len(X_train):
+                raise ValueError(f"Data integrity error in fold {fold}: "
+                                 f"train_cv ({len(X_train_cv)}) + val ({len(X_val)}) != "
+                                 f"total train ({len(X_train)})")
+
             all_val_indices.update(val_index)
 
-            # Hyperparameter tuning using optuna
-            best_hyperparameters, best_model_cv, _ = hp.hyperparameter_tuning(cfg.model.name, X_train_cv,
-                                                                              y_train_cv,
-                                                                              X_val, y_val,
-                                                                              n_trials=cfg.optuna.n_trials,
-                                                                              verbose=verbose)
+            # Create and train model
+            model = clf.create_model(cfg.model.name, seed=seed)
+            model.fit(X_train_cv, y_train_cv)
 
-            val_pred = best_model_cv.predict(X_val)
-            val_proba = best_model_cv.predict_proba(X_val)[:, 1]
+            # Make predictions on validation set
+            val_pred = model.predict(X_val)
+            val_proba = model.predict_proba(X_val)[:, 1]  # Probability of positive class
+
+            # Store predictions and probabilities
             train_predictions.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_pred
             train_probabilities.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_proba
 
-            # Accuracy score but can be changed to other metrics
+            # Calculate and store validation score
             val_score = utils.compute_metrics(y_val, val_pred)['accuracy']
             val_scores.append(val_score)
-            models.append(best_model_cv)
+            models.append(model)
 
             if verbose:
-                logging.info(f"Best hyperparameters: {best_hyperparameters}")
                 logging.info(f"Validation score: {val_score}")
         assert len(all_val_indices) == len(X_train), "Folds do not contain all different samples"
 
@@ -132,6 +175,9 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
         y_pred_test = best_model.predict(X_test)
         y_pred_test_proba = best_model.predict_proba(X_test)[:, 1]
 
+        assert len(y_pred_test) == len(y_test), "Predictions do not match the test set"
+        assert len(y_pred_test_proba) == len(y_test), "Probabilities do not match the test set"
+
         test_predictions[cfg.data.id] = test_df.index.to_list()
         test_predictions[f'Task_{file_idx + 1}'] = y_pred_test
         test_probabilities[cfg.data.id] = test_df.index.to_list()
@@ -139,6 +185,8 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
 
     # Clean and prepare final predictions
     train_predictions = utils.clean_predictions(train_predictions, cfg.data.id).copy()
+
+    logging.info(f"Train predictions: \n {train_predictions.to_string()}") if verbose else None
     train_predictions.loc[:, 'Label'] = y_train.to_numpy()
 
     train_probabilities = utils.clean_predictions(train_probabilities, cfg.data.id).copy()

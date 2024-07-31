@@ -12,6 +12,28 @@ from sklearn.tree import DecisionTreeClassifier
 import hyperparameters as hp
 
 
+def create_model(model_name: str, seed: int = 42):
+    """
+    Create and return a model based on the given model name.
+
+    :param model_name: Name of the model to create
+    :param seed: Random seed for reproducibility
+    :return: An instance of the specified model
+    """
+    if model_name == "RandomForest":
+        return RandomForestClassifier(n_estimators=100, random_state=seed)
+    elif model_name == "DecisionTree":
+        return DecisionTreeClassifier(random_state=seed)
+    elif model_name == "LogisticRegression":
+        return LogisticRegression(random_state=seed)
+    elif model_name == "SVC":
+        return SVC(probability=True, random_state=seed)
+    elif model_name == "MLP":
+        return MLPClassifier(random_state=seed)
+    else:
+        raise ValueError(f"Invalid model name: {model_name}")
+
+
 def majority_vote(df: pd.DataFrame) -> pd.DataFrame:
     """
     Perform majority vote on the predictions dataframe.

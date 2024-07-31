@@ -15,8 +15,8 @@ hydra:
 settings:
   seed: 42
   runs: 1
-  verbose: False
-  debug: False
+  verbose: True
+  debug: True
 
 paths:
   source: data
@@ -24,7 +24,7 @@ paths:
 
 data:
   type: ML # ML or DL or ML_orig for cleaning the statistical data
-  dataset: InAirOnPaper # All, InAir, OnPaper, InAirOnPaper , CNN1, CNN2, ...
+  dataset: All # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S
   type_2: None # ML or DL or None # DA USARE IN CASO DI COMBINING DATASET
   dataset2: None # Dataset da combinare con il primo
   extension: csv
@@ -40,18 +40,18 @@ model:
   name: DecisionTree # RandomForest, CatBoost, SVC, DecisionTree, XGB
 
 optuna:
-  n_trials: 5
+  n_trials: 1
 
 experiment:
   train_size: 0.5
   test_size: 0.5
   test_size_final: 0.2
   val_size: 0.2
-  folds: 5
-  calibration: True # True or False
+  folds: 2
+  calibration: False # True or False
   calibration_method: isotonic # isotonic or sigmoid
   calibration_cv: 5
-  stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
+  stacking_method: MajorityVote # Bayesian, Classification, MajorityVote, WeightedMajorityVote
   stacking_model: LogisticRegression # MLP, LogisticRegression
 
 
