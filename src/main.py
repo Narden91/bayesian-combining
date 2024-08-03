@@ -61,18 +61,6 @@ def main(cfg: DictConfig):
     num_subjects = sample_df.shape[0]
     num_tasks = len(file_list)
 
-    train_predictions = pd.DataFrame(index=sample_df[cfg.data.id],
-                                     columns=[f'Task_{i + 1}' for i in range(num_tasks)])
-
-    train_probabilities = pd.DataFrame(index=sample_df[cfg.data.id],
-                                       columns=[f'Task_{i + 1}' for i in range(num_tasks)])
-
-    test_predictions = pd.DataFrame(index=None,
-                                    columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
-
-    test_probabilities = pd.DataFrame(index=None,
-                                      columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
-
     logging.info(f"Bayesian Network Analysis Experiment starting...")
     logging.info(f"Number of runs: {num_runs}")
     logging.info(f"Tasks: {num_tasks}")
@@ -89,6 +77,18 @@ def main(cfg: DictConfig):
         os.makedirs(run_folder) if not run_folder.exists() else None
         seed = global_seed + run
         logging.info(f"-------------------Run {run + 1} | Seed: {seed}-------------------")
+
+        train_predictions = pd.DataFrame(index=sample_df[cfg.data.id],
+                                         columns=[f'Task_{i + 1}' for i in range(num_tasks)])
+
+        train_probabilities = pd.DataFrame(index=sample_df[cfg.data.id],
+                                           columns=[f'Task_{i + 1}' for i in range(num_tasks)])
+
+        test_predictions = pd.DataFrame(index=None,
+                                        columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
+
+        test_probabilities = pd.DataFrame(index=None,
+                                          columns=[cfg.data.id] + [f'Task_{i + 1}' for i in range(num_tasks)])
 
         if analysis_type == "ML":
             logging.info(f"Machine Learning Analysis") if verbose else None
