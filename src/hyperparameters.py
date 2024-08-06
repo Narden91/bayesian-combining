@@ -1,4 +1,5 @@
 import io
+import multiprocessing
 import sys
 import warnings
 
@@ -120,13 +121,16 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
     best_hyperparameters = study.best_params
     val_score = study.best_value
 
-    # Create the best model with the optimal hyperparameters
+    # Calculate the number of jobs (80% of available cores)
+    n_cores = multiprocessing.cpu_count()
+    n_jobs = max(1, int(n_cores * 0.8))
+
     if model_name == "RandomForest":
-        best_model = RandomForestClassifier(**best_hyperparameters)
+        best_model = RandomForestClassifier(**best_hyperparameters, n_jobs=n_jobs)
     elif model_name == "DecisionTree":
         best_model = DecisionTreeClassifier(**best_hyperparameters)
     elif model_name == "LogisticRegression":
-        best_model = LogisticRegression(**best_hyperparameters)
+        best_model = LogisticRegression(**best_hyperparameters, n_jobs=n_jobs)
     elif model_name == "SVC":
         best_model = SVC(**best_hyperparameters)
     elif model_name == "MLP":
@@ -134,9 +138,10 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
         best_hyperparameters['hidden_layer_sizes'] = hidden_layer_sizes
         best_model = MLPClassifier(**best_hyperparameters)
     elif model_name == "CatBoost":
-        best_model = CatBoostClassifier(**best_hyperparameters)
+        best_model = CatBoostClassifier(**best_hyperparameters,
+                                        thread_count=n_jobs)
     elif model_name == "XGB":
-        best_model = XGBClassifier(**best_hyperparameters)
+        best_model = XGBClassifier(**best_hyperparameters, n_jobs=n_jobs)
     else:
         raise ValueError(f"{model_name} is an invalid model choice.")
 
