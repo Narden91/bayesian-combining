@@ -57,7 +57,7 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
             )
         elif model_name == "SVC":
             model = SVC(
-                C=trial.suggest_loguniform('C', 1e-6, 1e6),
+                C=trial.suggest_float('C', 1e-6, 1e6, log=True),
                 kernel=trial.suggest_categorical('kernel', ['linear', 'poly', 'rbf', 'sigmoid']),
                 gamma=trial.suggest_categorical('gamma', ['scale', 'auto'])
             )
@@ -80,11 +80,11 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
                 verbose=False  # Disable CatBoost's own verbosity
             )
         elif model_name == "XGB":
-            model=XGBClassifier(
-                n_estimators=trial.suggest_int('n_estimators', 100, 1000),
+            model = XGBClassifier(
+                n_estimators=trial.suggest_int('n_estimators', 100, 200),
                 max_depth=trial.suggest_int('max_depth', 2, 12),
-                learning_rate=trial.suggest_float('learning_rate', 1e-6, 1e-1),
-                gamma=trial.suggest_float('gamma', 0, 1),
+                learning_rate=trial.suggest_float('learning_rate', 1e-3, 0.1, log=True),
+                gamma=trial.suggest_float('gamma', 1e-8, 1.0, log=True),
                 reg_alpha=trial.suggest_float('reg_alpha', 0, 1),
                 reg_lambda=trial.suggest_float('reg_lambda', 0, 1),
                 subsample=trial.suggest_float('subsample', 0.5, 1),
@@ -94,7 +94,7 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
         else:
             raise ValueError("Invalid model type.")
 
-            # Suppress stdout and stderr during model fitting
+        # Suppress stdout and stderr during model fitting
         old_stdout = sys.stdout
         old_stderr = sys.stderr
         sys.stdout = io.StringIO()

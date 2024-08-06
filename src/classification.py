@@ -8,6 +8,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
+from xgboost import XGBClassifier
 
 import hyperparameters as hp
 
@@ -30,6 +31,8 @@ def create_model(model_name: str, seed: int = 42):
         return SVC(probability=True, random_state=seed)
     elif model_name == "MLP":
         return MLPClassifier(random_state=seed)
+    elif model_name == "XGB":
+        return XGBClassifier(random_state=seed)
     else:
         raise ValueError(f"Invalid model name: {model_name}")
 
