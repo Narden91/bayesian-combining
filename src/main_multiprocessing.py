@@ -234,7 +234,16 @@ def main(cfg: DictConfig):
     # Start time
     start_time = time.time()
 
-    with concurrent.futures.ProcessPoolExecutor() as executor:
+    total_cores = os.cpu_count()
+
+    # Calculate 80% of available cores
+    max_workers = int(total_cores * 0.8)
+
+    # Log the number of workers to be used
+    logging.info(f"Using {max_workers} out of {total_cores} available cores for parallel processing.")
+
+    # Create the ProcessPoolExecutor with the calculated max_workers
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(run_analysis, run, global_seed, root_output_folder, sample_df, cfg, num_tasks,
                                    analysis_type, verbose, debug, file_list, file_list_comb) for run in range(num_runs)]
         for future in concurrent.futures.as_completed(futures):
