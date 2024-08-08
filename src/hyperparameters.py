@@ -58,9 +58,9 @@ def hyperparameter_tuning(model_name, X_train, y_train, X_val, y_val, n_trials=1
             )
         elif model_name == "SVC":
             model = SVC(
-                C=trial.suggest_float('C', 1e-6, 1e6, log=True),
-                kernel=trial.suggest_categorical('kernel', ['linear', 'poly', 'rbf', 'sigmoid']),
-                gamma=trial.suggest_categorical('gamma', ['scale', 'auto'])
+                C=trial.suggest_float('C', 1e-6, 1e6, log=True)
+                # kernel=trial.suggest_categorical('kernel', ['linear', 'poly', 'rbf', 'sigmoid']),
+                # gamma=trial.suggest_categorical('gamma', ['scale', 'auto'])
             )
         elif model_name == "MLP":
             hidden_layer_sizes = trial.suggest_categorical('hidden_layer_sizes', ['50', '100', '50,50', '100,50'])
