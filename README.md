@@ -49,9 +49,13 @@ python -m pip freeze > requirements.txt
     ```
     env\Scripts\activate
     ```
-2. Launch Python main:<br>
+2. Launch Python main **Serial Execution**:<br>
     ```
     python3 main.py
+    ```
+    **Launch Python main with Multiprocessing**:
+    ```
+    python3 main_multiprocessing.py
     ```
 3. Deactivate Virtual Environment:<br>
     **Linux**
