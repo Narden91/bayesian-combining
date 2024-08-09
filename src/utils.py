@@ -1,8 +1,12 @@
 import os
 import random
 import re
+import shutil
+import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
+from typing import Dict
 
 import pandas as pd
 import logging
@@ -256,52 +260,120 @@ def format_confusion_matrix(cm, class_labels):
     return formatted_cm
 
 
-def save_metrics_to_file(metrics: dict, filename: str) -> None:
+def atomic_write_with_retry(file_path: str, content: str, max_retries: int = 5, base_delay: float = 0.1) -> None:
     """
-    Save the metrics to a text file.
-    :param metrics:
-    :param filename:
-    :return:
+    Write content to a file atomically using a temporary file and rename operation,
+    with a retry mechanism for concurrent access.
+
+    :param file_path: Path to the target file
+    :param content: Content to write to the file
+    :param max_retries: Maximum number of retry attempts
+    :param base_delay: Base delay between retries (will be multiplied by attempt number)
     """
-    # class_labels = ['Class 0', 'Class 1']
-    # formatted_cm = format_confusion_matrix(metrics['confusion_matrix'], class_labels)
+    for attempt in range(max_retries):
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, dir=os.path.dirname(file_path)) as temp_file:
+                temp_file.write(content)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
 
-    # check if the file exists otherwise create it
-    if not os.path.exists(filename):
-        with open(filename, 'w') as f:
-            f.write("Metrics:\n")
-            f.write(f"Accuracy: {metrics['accuracy']}\n")
-            f.write(f"Precision: {metrics['precision']}\n")
-            f.write(f"Sensitivity: {metrics['sensitivity']}\n")
-            f.write(f"Specificity: {metrics['specificity']}\n")
-            f.write(f"F1 Score: {metrics['f1_score']}\n")
-            f.write(f"MCC: {metrics['mcc']}\n")
+            # Use shutil.move instead of os.rename for cross-device support
+            shutil.move(temp_file.name, file_path)
+            return
+        except OSError as e:
+            if attempt == max_retries - 1:
+                raise e
+            delay = base_delay * (attempt + 1) * (1 + random.random())
+            time.sleep(delay)
 
 
-def save_metrics_bn_to_file(metrics: dict, filename: str, verbose: bool = False) -> None:
+def save_metrics_to_file(metrics: Dict, filename: str, verbose: bool = False) -> None:
     """
-    Save the metrics of the BN to a text file.
-    :param metrics:
-    :param filename:
-    :param verbose:
-    :return:
-    """
-    # class_labels = ['Class 0', 'Class 1']
-    # formatted_cm = format_confusion_matrix(metrics['confusion_matrix'], class_labels)
-    logging.info(f"Metrics: {metrics}") if verbose else None
+    Save the metrics to a text file using atomic write with retry mechanism.
 
-    # check if the file exists otherwise create it
-    if not os.path.exists(filename):
-        with open(filename, 'w') as f:
-            f.write("Metrics from Bayesian Network:\n")
-            f.write(f"Accuracy: {metrics['accuracy']}\n")
-            f.write(f"Precision: {metrics['precision']}\n")
-            f.write(f"Sensitivity: {metrics['sensitivity']}\n")
-            f.write(f"Specificity: {metrics['specificity']}\n")
-            f.write(f"F1 Score: {metrics['f1_score']}\n")
-            f.write(f"MCC: {metrics['mcc']}\n")
-            f.write(f"Log Likelihood: {metrics['log_likelihood']}\n")
-            f.write(f"BIC: {metrics['bic_score']}\n")
+    :param metrics: Dictionary containing metric values
+    :param filename: Path to the output file
+    :param verbose: Flag to enable verbose logging
+    """
+    try:
+        content = "Metrics:\n"
+        for key, value in metrics.items():
+            content += f"{key}: {value}\n"
+
+        atomic_write_with_retry(filename, content)
+
+        if verbose:
+            logging.info(f"Metrics saved to {filename}")
+    except Exception as e:
+        logging.error(f"Error saving metrics to {filename}: {str(e)}")
+
+
+def save_metrics_bn_to_file(metrics: Dict, filename: str, verbose: bool = False) -> None:
+    """
+    Save the metrics of the BN to a text file using atomic write with retry mechanism.
+
+    :param metrics: Dictionary containing metric values
+    :param filename: Path to the output file
+    :param verbose: Flag to enable verbose logging
+    """
+    try:
+        content = "Metrics from Bayesian Network:\n"
+        for key, value in metrics.items():
+            content += f"{key}: {value}\n"
+
+        atomic_write_with_retry(filename, content)
+
+        if verbose:
+            logging.info(f"Bayesian Network metrics saved to {filename}")
+    except Exception as e:
+        logging.error(f"Error saving Bayesian Network metrics to {filename}: {str(e)}")
+
+# def save_metrics_to_file(metrics: dict, filename: str) -> None:
+#     """
+#     Save the metrics to a text file.
+#     :param metrics:
+#     :param filename:
+#     :return:
+#     """
+#     # class_labels = ['Class 0', 'Class 1']
+#     # formatted_cm = format_confusion_matrix(metrics['confusion_matrix'], class_labels)
+#
+#     # check if the file exists otherwise create it
+#     if not os.path.exists(filename):
+#         with open(filename, 'w') as f:
+#             f.write("Metrics:\n")
+#             f.write(f"Accuracy: {metrics['accuracy']}\n")
+#             f.write(f"Precision: {metrics['precision']}\n")
+#             f.write(f"Sensitivity: {metrics['sensitivity']}\n")
+#             f.write(f"Specificity: {metrics['specificity']}\n")
+#             f.write(f"F1 Score: {metrics['f1_score']}\n")
+#             f.write(f"MCC: {metrics['mcc']}\n")
+#
+#
+# def save_metrics_bn_to_file(metrics: dict, filename: str, verbose: bool = False) -> None:
+#     """
+#     Save the metrics of the BN to a text file.
+#     :param metrics:
+#     :param filename:
+#     :param verbose:
+#     :return:
+#     """
+#     # class_labels = ['Class 0', 'Class 1']
+#     # formatted_cm = format_confusion_matrix(metrics['confusion_matrix'], class_labels)
+#     logging.info(f"Metrics: {metrics}") if verbose else None
+#
+#     # check if the file exists otherwise create it
+#     if not os.path.exists(filename):
+#         with open(filename, 'w') as f:
+#             f.write("Metrics from Bayesian Network:\n")
+#             f.write(f"Accuracy: {metrics['accuracy']}\n")
+#             f.write(f"Precision: {metrics['precision']}\n")
+#             f.write(f"Sensitivity: {metrics['sensitivity']}\n")
+#             f.write(f"Specificity: {metrics['specificity']}\n")
+#             f.write(f"F1 Score: {metrics['f1_score']}\n")
+#             f.write(f"MCC: {metrics['mcc']}\n")
+#             f.write(f"Log Likelihood: {metrics['log_likelihood']}\n")
+#             f.write(f"BIC: {metrics['bic_score']}\n")
 
 
 def calculate_average_metrics(root_output_folder):
