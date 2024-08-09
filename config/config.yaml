@@ -37,7 +37,7 @@ scaling:
   type: Robust # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
 
 model:
-  name: DecisionTree # RandomForest, CatBoost, SVC, DecisionTree, XGB
+  name: SVC # RandomForest, CatBoost, SVC, DecisionTree, XGB
 
 optuna:
   n_trials: 25

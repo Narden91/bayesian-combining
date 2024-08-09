@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 from pathlib import Path
 
 import graphviz
@@ -193,7 +194,7 @@ def create_bn_visualization(model, target, run_folder, run_number, max_retries=5
         dot.edge(edge[0], edge[1])
 
     run_folder = Path(run_folder)
-    bn_path = run_folder / f"bayesian_network_{run_number + 1}"
+    bn_path = run_folder / f"bayesian_network_{run_number + 1}_{uuid.uuid4().hex}"  # Ensure unique filename
 
     for attempt in range(max_retries):
         try:
@@ -218,6 +219,7 @@ def create_bn_visualization(model, target, run_folder, run_number, max_retries=5
             delay = base_delay * (attempt + 1) * (1 + random.random())
             logging.warning(f"Attempt {attempt + 1} to save BN visualization failed. Retrying in {delay:.2f} seconds. Error: {str(e)}")
             time.sleep(delay)
+
 
 
 def analyze_network_structure(model, cfg):
