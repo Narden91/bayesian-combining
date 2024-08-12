@@ -23,8 +23,8 @@ paths:
   output: output
 
 data:
-  type: ML # ML or DL or ML_orig for cleaning the statistical data
-  dataset: All # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S
+  type: DL # ML or DL or ML_orig for cleaning the statistical data
+  dataset: InceptionResNetV2 # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
   type_2: None # ML or DL or None # DA USARE IN CASO DI COMBINING DATASET
   dataset2: None # Dataset da combinare con il primo
   extension: csv
@@ -37,7 +37,7 @@ scaling:
   type: Robust # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
 
 model:
-  name: SVC # RandomForest, CatBoost, SVC, DecisionTree, XGB
+  name: DecisionTree # RandomForest, CatBoost, SVC, DecisionTree, XGB
 
 optuna:
   n_trials: 25

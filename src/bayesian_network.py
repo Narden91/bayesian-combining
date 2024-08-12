@@ -63,20 +63,35 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
     model = BayesianNetwork(best_model_stck.edges())
     model.fit(df_predictions, estimator=BayesianEstimator, prior_type=cfg.bayesian_net.prior_type)
 
-    logging.info("--------------------------------------------")
     # Calculate BIC score
-    bic = BicScore(df_predictions)
-    bic_score = bic.score(model)
-    logging.info(f"BIC Score: {bic_score}")
+    try:
+        bic = BicScore(df_predictions)
+        bic_score = bic.score(model)
+        logging.info(f"BIC Score: {bic_score}")
+    except Exception as e:
+        logging.error(f"Error calculating BIC score: {str(e)}")
+        bic_score = 0
+        logging.info(f"BIC Score set to: {bic_score}")
 
     # Calculate log likelihood score on training data
-    log_likelihood = log_likelihood_score(model, df_predictions)
-    logging.info(f"Log Likelihood Score: {log_likelihood}")
+    try:
+        df_predictions_reordered = df_predictions[list(model.nodes())]
+        log_likelihood = log_likelihood_score(model, df_predictions_reordered)
+        logging.info(f"Log Likelihood Score: {log_likelihood}")
+    except Exception as e:
+        logging.error(f"Error calculating log likelihood: {str(e)}")
+        log_likelihood = 0
+        logging.info(f"Log Likelihood Score set to: {log_likelihood}")
 
     # Calculate log likelihood score on test data
-    log_likelihood_test = log_likelihood_score(model, df_test)
-    logging.info(f"Log Likelihood Score (Test): {log_likelihood_test}")
-    logging.info("--------------------------------------------")
+    try:
+        df_test_reordered = df_test[list(model.nodes())]
+        log_likelihood_test = log_likelihood_score(model, df_test_reordered)
+        logging.info(f"Log Likelihood Score (Test): {log_likelihood_test}")
+    except Exception as e:
+        logging.error(f"Error calculating log likelihood on test data: {str(e)}")
+        log_likelihood_test = 0
+        logging.info(f"Log Likelihood Score (Test) set to: {log_likelihood_test}")
 
     # Create and save Bayesian Network visualization
     create_bn_visualization(model, cfg.data.target, run_folder, run_number)

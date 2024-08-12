@@ -119,11 +119,13 @@ def main(cfg: DictConfig):
         stacking_test_data = test_preds.drop(cfg.data.id, axis=1)
         stacking_test_data_probabilities = test_probs.drop(cfg.data.id, axis=1)
 
-        # Map predictions to -1 and 1
+        # Map predictions to -1 and 1 for non-probability dataframes
         stacking_trainings_data.replace({0: -1}, inplace=True)
-        stacking_trainings_data_proba.replace({0: -1}, inplace=True)
         stacking_test_data.replace({0: -1}, inplace=True)
-        stacking_test_data_probabilities.replace({0: -1}, inplace=True)
+
+        # Map only the 'Label' column for probability dataframes
+        stacking_trainings_data_proba[cfg.data.target] = stacking_trainings_data_proba[cfg.data.target].replace({0: -1})
+        stacking_test_data_probabilities[cfg.data.target] = stacking_test_data_probabilities[cfg.data.target].replace({0: -1})
 
         first_level_data_folder = run_folder / "First_level_data"
         os.makedirs(first_level_data_folder) if not first_level_data_folder.exists() else None

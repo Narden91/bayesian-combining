@@ -197,6 +197,16 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
     test_probabilities.loc[:, 'Label'] = y_test.to_numpy()
     test_probabilities.sort_values(by=cfg.data.id, inplace=True)
 
+    # Check if all the dataframes have the Label column
+    if 'Label' not in train_predictions.columns:
+        raise ValueError("Label column not found in train predictions")
+    if 'Label' not in train_probabilities.columns:
+        raise ValueError("Label column not found in train probabilities")
+    if 'Label' not in test_predictions.columns:
+        raise ValueError("Label column not found in test predictions")
+    if 'Label' not in test_probabilities.columns:
+        raise ValueError("Label column not found in test probabilities")
+
     logging.info(f"Train predictions: \n {train_predictions}") if verbose else None
     logging.info(f"Train probabilities: \n {train_probabilities}") if verbose else None
     logging.info(f"Test predictions: \n {test_predictions}") if verbose else None
