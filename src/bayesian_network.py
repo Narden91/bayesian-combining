@@ -35,6 +35,7 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
     :return: list, pd.DataFrame, pd.DataFrame
     """
     # Build Bayesian Network
+    # Mapping algorithms and initializing the selected algorithm
     algorithm_mapping = {
         'HillClimb': HillClimbSearch,
         'Exhaustive': ExhaustiveSearch,
@@ -42,13 +43,16 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
         'TreeSearch': TreeSearch
     }
 
+    # Ensure the selected algorithm is valid
     if cfg.bayesian_net.algorithm not in algorithm_mapping:
         raise ValueError(f"Invalid algorithm: {cfg.bayesian_net.algorithm}")
 
+    # Initialize the Bayesian Network search object with df_predictions
     bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions)
 
     logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
 
+    # Estimate the network structure
     if cfg.bayesian_net.use_parents:
         logging.info(f"Using max_parents = {cfg.experiment.max_parents}")
         best_model_stck = bn_model.estimate(max_indegree=cfg.experiment.max_parents)
@@ -56,12 +60,43 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
         logging.info("No max_parents constraint applied")
         best_model_stck = bn_model.estimate()
 
-    if cfg.bayesian_net.verbose:
-        logging.info("Best model edges:")
-        logging.info(best_model_stck.edges())
+    # Extract nodes from the learned structure
+    nodes = set(sum(best_model_stck.edges(), ()))  # Flatten edges to get all nodes
+    logging.info(f"Nodes in the Bayesian Network: {nodes}")
 
+    # Check if the target node is in the set of nodes
+    if cfg.data.target not in nodes:
+        logging.warning(f"Target node {cfg.data.target} not found in the learned structure. Adding it manually.")
+
+        # Add the node to the model and connect it minimally to ensure it's recognized
+        best_model_stck.add_node(cfg.data.target)
+        # Optional: Add a minimal edge to ensure the node is fully registered
+        example_node = next(iter(nodes))  # Select any existing node
+        best_model_stck.add_edge(cfg.data.target, example_node)  # Add a neutral connection
+
+    # Verify node addition in the graph
+    if cfg.data.target not in best_model_stck.nodes():
+        logging.error(f"Failed to add target node {cfg.data.target} to the Bayesian Network.")
+    else:
+        logging.info(f"Successfully added target node {cfg.data.target} to the Bayesian Network.")
+
+    # Initialize the Bayesian Network with the edges
     model = BayesianNetwork(best_model_stck.edges())
+
+    # Fit the model with the given data
     model.fit(df_predictions, estimator=BayesianEstimator, prior_type=cfg.bayesian_net.prior_type)
+
+    # Final check: ensure the node is in the fitted model
+    if cfg.data.target not in model.nodes():
+        logging.error(f"The node {cfg.data.target} is still not in the fitted Bayesian Network.")
+        raise ValueError(f"The node {cfg.data.target} is missing from the Bayesian Network after fitting.")
+    else:
+        try:
+            # Attempt to retrieve the Markov Blanket of the target node
+            label_markov_blanket = model.get_markov_blanket(cfg.data.target)
+            logging.info(f"Markov Blanket for {cfg.data.target}: {label_markov_blanket}")
+        except Exception as e:
+            logging.error(f"Error retrieving Markov Blanket for {cfg.data.target}: {str(e)}")
 
     # Calculate BIC score
     try:

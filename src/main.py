@@ -15,6 +15,7 @@ import preprocessing as prep
 import bayesian_network as bn
 import classification as clf
 import main_process as mp
+import results_analysis as ra
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
@@ -33,6 +34,17 @@ def main(cfg: DictConfig):
     verbose = cfg.settings.verbose
     debug = cfg.settings.debug
     # endregion
+
+    if cfg.settings.results_analysis:
+        logging.info("Results analysis is enabled.")
+        output_results = output_path / Path(cfg.data.type)
+        # ra.result_analysis(output_results)
+        ra.result_analysis(output_path, cfg.data.type)  # Organizzare le metriche
+        # ra.result_analysis_tasks(output_path, cfg.data.type)  # Performance Tasks base
+        # ra.traverse_and_count_tasks_separately(output_results)  # occorrenze task Markov Blanket
+        return
+    else:
+        logging.info("Results analysis is disabled.")
 
     data_paths = utils.build_data_paths(cfg, data_parent_path)
 

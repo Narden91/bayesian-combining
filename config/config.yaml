@@ -14,9 +14,10 @@ hydra:
 
 settings:
   seed: 42
-  runs: 30
+  runs: 1
   verbose: False
   debug: False
+  results_analysis: True
 
 paths:
   source: data
@@ -24,7 +25,7 @@ paths:
 
 data:
   type: DL # ML or DL or ML_orig for cleaning the statistical data
-  dataset: InceptionResNetV2 # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
+  dataset: ConvNeXtSmall # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
   type_2: None # ML or DL or None # DA USARE IN CASO DI COMBINING DATASET
   dataset2: None # Dataset da combinare con il primo
   extension: csv
@@ -37,10 +38,10 @@ scaling:
   type: Robust # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
 
 model:
-  name: DecisionTree # RandomForest, CatBoost, SVC, DecisionTree, XGB
+  name: SVC # RandomForest, CatBoost, SVC, DecisionTree, XGB
 
 optuna:
-  n_trials: 25
+  n_trials: 2
 
 experiment:
   train_size: 0.7 # 0.5 for stacking Classification
