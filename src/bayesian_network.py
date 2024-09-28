@@ -340,3 +340,5 @@ def analyze_network_structure(model, cfg):
         max_edges = len(model.nodes()) * (len(model.nodes()) - 1) / 2
         density = len(model.edges()) / max_edges
         logging.info(f"Network density: {density:.4f}")
+
+

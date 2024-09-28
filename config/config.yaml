@@ -15,19 +15,29 @@ hydra:
 settings:
   seed: 42
   runs: 1
-  verbose: False
+  verbose: True
   debug: False
-  results_analysis: True
+  results_analysis: False
+  tasks: False
+  task_list: ["Task_16", "Task_21"]
 
 paths:
   source: data
   output: output
 
+#data:
+#  type: DL # ML or DL or ML_orig for cleaning the statistical data
+#  dataset: ConvNeXtSmall # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
+#  type_2: ML # ML or DL or None # DA USARE IN CASO DI COMBINING DATASET
+#  dataset2: All # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2, InceptionV3
+#  extension: csv
+#  separator: ","
+#  target: Label
+#  id: Id
+#  id_index: Id_index
+
 data:
-  type: DL # ML or DL or ML_orig for cleaning the statistical data
-  dataset: ConvNeXtSmall # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
-  type_2: None # ML or DL or None # DA USARE IN CASO DI COMBINING DATASET
-  dataset2: None # Dataset da combinare con il primo
+  dataset: ['ConvNeXtSmall'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
   extension: csv
   separator: ","
   target: Label
@@ -38,7 +48,7 @@ scaling:
   type: Robust # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
 
 model:
-  name: SVC # RandomForest, CatBoost, SVC, DecisionTree, XGB
+  name: DecisionTree # RandomForest, CatBoost, SVC, DecisionTree, XGB
 
 optuna:
   n_trials: 2

@@ -6,11 +6,10 @@ import re
 import csv
 
 
-def count_tasks_in_bayesian_clf(bayesian_clf_folder):
+def count_tasks_in_mb(bayesian_clf_folder):
     task_counts = Counter()
-    task_prefix = "Task_"
-    task_range = range(1, 26)  # Task_1 to Task_25
-    task_names = [f"{task_prefix}{i}" for i in task_range]
+    total_elements = 0
+    run_count = 0
 
     # Iterate over run_x folders inside Bayesian_stacking_clf
     for run_dir in bayesian_clf_folder.iterdir():
@@ -22,21 +21,68 @@ def count_tasks_in_bayesian_clf(bayesian_clf_folder):
                 blanket_file = run_dir / f"Markov_Blanket_{run_number}.txt"
                 # Check if the Markov_Blanket_{run_number}.txt file exists
                 if blanket_file.is_file():
+                    run_count += 1
                     with open(blanket_file, 'r') as file:
+                        elements = 0
+                        # Read tasks from the file and count occurrences
+                        for line in file:
+                            line = line.strip()
+                            # Use regex to extract task names without predefined knowledge
+                            task_match = re.match(r'Task_\d+_[\w\d]+', line)
+                            if task_match:
+                                task_name = task_match.group(0)
+                                task_counts[task_name] += 1
+                                elements += 1
+                        total_elements += elements
+                else:
+                    print(f"    Warning: {blanket_file} does not exist.")
+
+    # Calculate average number of elements per run
+    average_elements = total_elements / run_count if run_count > 0 else 0
+
+    return task_counts, average_elements
+
+
+def count_tasks_in_bayesian_clf(bayesian_clf_folder):
+    task_counts = Counter()
+    task_prefix = "Task_"
+    task_range = range(1, 26)  # Task_1 to Task_25
+    task_names = [f"{task_prefix}{i}" for i in task_range]
+    total_elements = 0
+    run_count = 0
+
+    # Iterate over run_x folders inside Bayesian_stacking_clf
+    for run_dir in bayesian_clf_folder.iterdir():
+        if run_dir.is_dir() and run_dir.name.startswith("run_"):
+            # Extract the run number
+            match = re.match(r'run_(\d+)', run_dir.name)
+            if match:
+                run_number = match.group(1)
+                blanket_file = run_dir / f"Markov_Blanket_{run_number}.txt"
+                # Check if the Markov_Blanket_{run_number}.txt file exists
+                if blanket_file.is_file():
+                    run_count += 1
+                    with open(blanket_file, 'r') as file:
+                        elements = 0
                         # Read tasks from the file and count occurrences
                         for line in file:
                             line = line.strip()
                             if line in task_names:
                                 task_counts[line] += 1
+                                elements += 1
+                        total_elements += elements
                 else:
                     print(f"    Warning: {blanket_file} does not exist.")
 
-    return task_counts
+    # Calculate average number of elements per run
+    average_elements = total_elements / run_count if run_count > 0 else 0
+
+    return task_counts, average_elements
 
 
 def save_results_to_csv(results, filename):
     # Determine the CSV columns: start with subfolder details, then tasks from Task_1 to Task_25
-    fieldnames = ['Main_Subfolder', 'Subfolder'] + [f"Task_{i}" for i in range(1, 26)]
+    fieldnames = ['Main_Subfolder', 'Subfolder', 'Average_Elements'] + [f"Task_{i}" for i in range(1, 26)]
 
     # Open the file in write mode and write the header and data rows
     with open(filename, 'w', newline='') as csvfile:
@@ -44,7 +90,7 @@ def save_results_to_csv(results, filename):
         writer.writeheader()
         for result in results:
             # Fill missing task occurrences with 0
-            for task in fieldnames[2:]:
+            for task in fieldnames[3:]:
                 if task not in result:
                     result[task] = 0
             writer.writerow(result)
@@ -66,14 +112,19 @@ def traverse_and_count_tasks_separately(root_folder):
                     bayesian_clf_folder = subfolder / "Bayesian_stacking_clf"
                     # Check if the Bayesian_stacking_clf folder exists
                     if bayesian_clf_folder.is_dir():
-                        task_counts = count_tasks_in_bayesian_clf(bayesian_clf_folder)
+                        task_counts, average_elements = count_tasks_in_bayesian_clf(bayesian_clf_folder)
 
                         # Collect results in a dictionary
                         if task_counts:
-                            result = {"Main_Subfolder": main_subfolder.name, "Subfolder": subfolder.name}
+                            result = {
+                                "Main_Subfolder": main_subfolder.name,
+                                "Subfolder": subfolder.name,
+                                "Average_Elements": average_elements
+                            }
                             for task in sorted(task_counts.keys(), key=lambda x: int(x.split('_')[1])):
                                 result[task] = task_counts[task]
                                 print(f"    {task}: {task_counts[task]}")
+                            print(f"    Average Elements: {average_elements}")
                             results.append(result)
                         else:
                             print(f"    No tasks found in Bayesian_stacking_clf under {subfolder.name}.")
@@ -84,12 +135,71 @@ def traverse_and_count_tasks_separately(root_folder):
     save_results_to_csv(results, 'task_occurrences.csv')
 
 
+# def result_analysis(base_dir: Path, data_type: str = "ML") -> int:
+#     """
+#     Analyzes the results of the experiments and saves CSV files.
+#     :param base_dir:
+#     :param data_type:
+#     :return:
+#     """
+#     output_dir = base_dir / Path("output_analysis") / Path(data_type)
+#
+#     if not output_dir.exists():
+#         output_dir.mkdir(parents=True)
+#
+#     base_dir = base_dir / Path(data_type)
+#
+#     # Check if the base directory exists
+#     if not base_dir.exists() or not base_dir.is_dir():
+#         logging.error(f"The provided base path {base_dir} is not valid.")
+#         return
+#
+#     # Iterate through the first level: CNN models like InceptionResNetV2
+#     for dataset in base_dir.iterdir():
+#         if dataset.is_dir():
+#             logging.info(f"Found Dataset directory: {dataset.name}")
+#
+#             dataset_output_dir = output_dir / dataset.name
+#             if not dataset_output_dir.exists():
+#                 dataset_output_dir.mkdir(parents=True)
+#
+#             # Iterate through the second level: Classifiers like DecisionTree_base_clf
+#             for classifier in dataset.iterdir():
+#                 if classifier.is_dir():
+#                     logging.info(f"  Found classifier directory: {classifier.name}")
+#
+#                     # Iterate through the third level: Methods like Bayesian_stacking_clf
+#                     for method in classifier.iterdir():
+#                         if method.is_dir():
+#                             logging.info(f"    Found method directory: {method.name}")
+#
+#                             # Iterate through the runs or files within method directories
+#                             for item in method.iterdir():
+#                                 if item.is_file() and item.name == 'average_metrics.txt':
+#                                     logging.info(f"      Found metrics file: {item.name}")
+#                                     df = parse_average_metrics(item)
+#                                     # display_dataframe(df)
+#
+#                                     # Save the DataFrame as CSV
+#                                     csv_filename = f"{classifier.name}_{method.name}.csv"
+#                                     csv_path = dataset_output_dir / csv_filename
+#
+#                                     # filter columns Accuracy  Precision  Sensitivity  Specificity    Score      MCC
+#                                     # df = df[['Accuracy', 'Precision', 'Sensitivity', 'Specificity', 'Score', 'MCC']]
+#                                     display_dataframe(df)
+#                                     df.to_csv(csv_path)
+#                                     logging.info(f"      Saved CSV file: {csv_path}")
+#                         # break
+#                 break
+#         break
+
+
 def result_analysis(base_dir: Path, data_type: str = "ML") -> int:
     """
     Analyzes the results of the experiments and saves CSV files.
-    :param base_dir:
-    :param data_type:
-    :return:
+    :param base_dir: Base directory containing the experiment results.
+    :param data_type: Type of data (e.g., "ML").
+    :return: None
     """
     output_dir = base_dir / Path("output_analysis") / Path(data_type)
 
@@ -115,25 +225,40 @@ def result_analysis(base_dir: Path, data_type: str = "ML") -> int:
             # Iterate through the second level: Classifiers like DecisionTree_base_clf
             for classifier in dataset.iterdir():
                 if classifier.is_dir():
-                    logging.info(f"  Found classifier directory: {classifier.name}")
+                    # logging.info(f"  Found classifier directory: {classifier.name}")
+
+                    # Create an empty DataFrame with the specified columns
+                    columns = ["Methods",
+                               "accuracy", "precision", "sensitivity", "specificity", "f1_score", "mcc",
+                               "Accuracy", "Precision", "Sensitivity", "Specificity", "Score", "MCC"
+                               ]
+                    classifier_df = pd.DataFrame(columns=columns)
 
                     # Iterate through the third level: Methods like Bayesian_stacking_clf
                     for method in classifier.iterdir():
                         if method.is_dir():
-                            logging.info(f"    Found method directory: {method.name}")
+                            # logging.info(f"    Found method directory: {method.name}")
 
                             # Iterate through the runs or files within method directories
                             for item in method.iterdir():
                                 if item.is_file() and item.name == 'average_metrics.txt':
-                                    logging.info(f"      Found metrics file: {item.name}")
+                                    # logging.info(f"      Found metrics file: {item.name}")
                                     df = parse_average_metrics(item)
-                                    display_dataframe(df)
 
-                                    # Save the DataFrame as CSV
-                                    csv_filename = f"{classifier.name}_{method.name}.csv"
-                                    csv_path = dataset_output_dir / csv_filename
-                                    df.to_csv(csv_path)
-                                    logging.info(f"      Saved CSV file: {csv_path}")
+                                    # logging.info(f"      Displaying DataFrame:")
+                                    # display_dataframe(df)
+
+                                    # # Add the method name as a new column to identify the method
+                                    df['Method_file'] = method.name
+
+                                    # Concatenate the current df with classifier_df
+                                    classifier_df = pd.concat([classifier_df, df], ignore_index=True)
+
+                        # Save the DataFrame as CSV
+                    csv_filename = f"{classifier.name}.csv"
+                    csv_path = dataset_output_dir / csv_filename
+                    classifier_df.to_csv(csv_path, index=False)
+                    logging.info(f"  Saved CSV file: {csv_path}")
 
 
 def parse_csv(file_path: Path) -> pd.DataFrame:
@@ -344,8 +469,19 @@ def parse_average_metrics(file_path):
             value = float(value.strip())
             metrics[current_approach][key] = value  # Store the metric value under the current approach
 
+    # logging.info(f"Metrics extracted: {metrics}")
+
     # Create a DataFrame from the parsed metrics
     df = pd.DataFrame.from_dict(metrics, orient='index')
+    df['Methods'] = df.index
+
+    # Reset the index
+    df.reset_index(drop=True, inplace=True)
+
+    # Reorder columns to place 'Methods' first
+    cols = ['Methods'] + [col for col in df.columns if col != 'Methods']
+    df = df[cols]
+
     return df
 
 
