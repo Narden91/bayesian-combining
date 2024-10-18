@@ -14,10 +14,11 @@ hydra:
 
 settings:
   seed: 42
-  runs: 1
-  verbose: True
+  runs: 2
+  verbose: False
   debug: False
   results_analysis: False
+  type: DL # ML or DL
   tasks: False
   task_list: ["Task_16", "Task_21"]
 
@@ -25,16 +26,6 @@ paths:
   source: data
   output: output
 
-#data:
-#  type: DL # ML or DL or ML_orig for cleaning the statistical data
-#  dataset: ConvNeXtSmall # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
-#  type_2: ML # ML or DL or None # DA USARE IN CASO DI COMBINING DATASET
-#  dataset2: All # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2, InceptionV3
-#  extension: csv
-#  separator: ","
-#  target: Label
-#  id: Id
-#  id_index: Id_index
 
 data:
   dataset: ['ConvNeXtSmall'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
@@ -45,10 +36,10 @@ data:
   id_index: Id_index
 
 scaling:
-  type: Robust # Standard, MinMax, Robust, MaxAbs, Quantile, Power, Normalizer
+  type: Robust
 
 model:
-  name: DecisionTree # RandomForest, CatBoost, SVC, DecisionTree, XGB
+  name: DecisionTree # RandomForest, SVC, DecisionTree, XGB
 
 optuna:
   n_trials: 2
@@ -59,17 +50,17 @@ experiment:
   test_size_final: 0.2
   val_size: 0.2
   folds: 5
-  calibration: True # True or False
-  calibration_method: isotonic # isotonic or sigmoid
+  calibration: True
+  calibration_method: isotonic
   calibration_cv: 5
-  stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
+  stacking_method: MajorityVote # Bayesian, Classification, MajorityVote, WeightedMajorityVote
   stacking_model: LogisticRegression # MLP, LogisticRegression
 
 
 bayesian_net:
   algorithm: HillClimb # HillClimb, Exhaustive, PC, TreeSearch
-  prior_type: BDeu # BDeu, K2 These alternatives specify the type of prior distribution to use for parameter estimation
-  max_parents: 3 #
+  prior_type: BDeu # BDeu, K2
+  max_parents: 3
   use_parents: False
   verbose: False
 
