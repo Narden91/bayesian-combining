@@ -207,70 +207,6 @@ def perform_inference(inference, df, target, markov_blanket):
     return predictions, probabilities_class_0, probabilities_class_1
 
 
-# def create_bn_visualization(model, target, run_folder, run_number):
-#     dot = graphviz.Digraph(comment=f'Bayesian Network {run_number + 1}')
-#     dot.attr(rankdir='LR')
-#
-#     for node in model.nodes():
-#         shape = 'diamond' if node == target else 'ellipse'
-#         dot.node(node, node, shape=shape)
-#
-#     for edge in model.edges():
-#         dot.edge(edge[0], edge[1])
-#
-#     bn_path = run_folder / f"bayesian_network_{run_number + 1}"
-#     dot.render(bn_path, format='png', cleanup=True)
-
-
-# def create_bn_visualization(model, target, run_folder, run_number, max_retries=5, base_delay=0.1):
-#     """
-#     Create and save a visualization of the Bayesian Network with manual file handling.
-#
-#     :param model: The Bayesian Network model
-#     :param target: The target variable
-#     :param run_folder: The folder to save the visualization
-#     :param run_number: The run number
-#     :param max_retries: Maximum number of retry attempts
-#     :param base_delay: Base delay between retries (will be multiplied by attempt number)
-#     """
-#     dot = graphviz.Digraph(comment=f'Bayesian Network {run_number + 1}')
-#     dot.attr(rankdir='LR')
-#
-#     for node in model.nodes():
-#         shape = 'diamond' if node == target else 'ellipse'
-#         dot.node(node, node, shape=shape)
-#
-#     for edge in model.edges():
-#         dot.edge(edge[0], edge[1])
-#
-#     run_folder = Path(run_folder)
-#     bn_path = run_folder / f"bayesian_network_{run_number + 1}_{uuid.uuid4().hex}"  # Ensure unique filename
-#
-#     for attempt in range(max_retries):
-#         try:
-#             # Generate DOT source
-#             dot_source = dot.source
-#
-#             # Save DOT file
-#             dot_file = bn_path.with_suffix('.dot')
-#             with open(dot_file, 'w') as f:
-#                 f.write(dot_source)
-#
-#             # Convert DOT to PNG using command-line tool
-#             png_file = bn_path.with_suffix('.png')
-#             subprocess.run(['dot', '-Tpng', str(dot_file), '-o', str(png_file)], check=True)
-#
-#             logging.info(f"Bayesian Network visualization saved successfully: {png_file}")
-#             return
-#         except Exception as e:
-#             if attempt == max_retries - 1:
-#                 logging.error(f"Failed to save Bayesian Network visualization after {max_retries} attempts: {str(e)}")
-#                 raise
-#             delay = base_delay * (attempt + 1) * (1 + random.random())
-#             logging.warning(f"Attempt {attempt + 1} to save BN visualization failed. Retrying in {delay:.2f} seconds. Error: {str(e)}")
-#             time.sleep(delay)
-
-
 def create_bn_visualization(model, target, run_folder, run_number, max_retries=5, base_delay=0.1):
     """
     Create and save a visualization of the Bayesian Network with manual file handling.
@@ -294,7 +230,8 @@ def create_bn_visualization(model, target, run_folder, run_number, max_retries=5
         dot.edge(edge[0], edge[1])
 
     run_folder = Path(run_folder)
-    bn_path = run_folder / f"bayesian_network_{run_number + 1}_{uuid.uuid4().hex}"  # Ensure unique filename
+    # bn_path = run_folder / f"bayesian_network_{run_number + 1}_{uuid.uuid4().hex}"  # Ensure unique filename
+    bn_path = run_folder / f"bayesian_network_{run_number + 1}"
 
     for attempt in range(max_retries):
         try:
@@ -306,12 +243,12 @@ def create_bn_visualization(model, target, run_folder, run_number, max_retries=5
             with open(dot_file, 'w') as f:
                 f.write(dot_source)
 
-            # Convert DOT to PNG using command-line tool
-            png_file = bn_path.with_suffix('.png')
-            subprocess.run(['dot', '-Tpng', str(dot_file), '-o', str(png_file)], check=True)
-
-            logging.info(f"Bayesian Network visualization saved successfully: {png_file}")
-            break  # Exit the loop if successful
+            # # Convert DOT to PNG using command-line tool
+            # png_file = bn_path.with_suffix('.png')
+            # subprocess.run(['dot', '-Tpng', str(dot_file), '-o', str(png_file)], check=True)
+            #
+            # logging.info(f"Bayesian Network visualization saved successfully: {png_file}")
+            break
         except Exception as e:
             delay = base_delay * (attempt + 1) * (1 + random.random())
             logging.warning(f"Attempt {attempt + 1} to save BN visualization failed. Retrying in {delay:.2f} seconds. Error: {str(e)}")
@@ -340,3 +277,5 @@ def analyze_network_structure(model, cfg):
         max_edges = len(model.nodes()) * (len(model.nodes()) - 1) / 2
         density = len(model.edges()) / max_edges
         logging.info(f"Network density: {density:.4f}")
+
+

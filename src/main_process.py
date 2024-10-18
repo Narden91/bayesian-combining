@@ -1,6 +1,8 @@
 import logging
 import os
 from pathlib import Path
+from typing import Tuple, Dict
+
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedKFold, train_test_split
@@ -140,7 +142,7 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
             train_probabilities.loc[X_train.index[val_index], f'Task_{file_idx + 1}'] = val_proba
 
             # Calculate and store validation score
-            val_score = utils.compute_metrics(y_val, val_pred)['accuracy']
+            val_score = utils.compute_metrics(y_val, val_pred)['Accuracy']
             val_scores.append(val_score)
             models.append(model)
 
@@ -286,3 +288,84 @@ def combined_analysis(file_list, file_list_two, cfg, seed, verbose, train_predic
         test_probs = first_test_probs
 
     return train_preds, train_probs, test_preds, test_probs
+
+
+def combine_datasets(output_folders: Dict[str, Path], run_number: int,
+                     verbose: bool = False) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Combine datasets from multiple folders into single dataframes for training and testing.
+
+    This function reads CSV files for each dataset, combines them, and ensures the Label column
+    is added from the last appended dataframe.
+
+    Args:
+        output_folders (Dict[str, Path]): A dictionary mapping dataset names to their folder paths.
+        run_number (int): The current run number.
+        verbose (bool, optional): If True, print verbose logging information. Defaults to False.
+
+    Returns:
+        Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]: A tuple containing:
+            - Combined training predictions dataframe
+            - Combined training probabilities dataframe
+            - Combined test predictions dataframe
+            - Combined test probabilities dataframe
+
+    Raises:
+        ValueError: If no datasets are found to combine.
+        Exception: If there's an error reading CSV files for a dataset.
+    """
+    combined_data = {
+        'train_preds': [],
+        'train_probs': [],
+        'test_preds': [],
+        'test_probs': []
+    }
+
+    datasets = [dataset for dataset in output_folders.keys() if dataset != "combined"]
+    if not datasets:
+        raise ValueError("No datasets found to combine.")
+
+    for dataset in datasets:
+        folder = output_folders[dataset]
+        data_folder = folder / f"run_{run_number}" / "First_level_data"
+        try:
+            train_preds = pd.read_csv(data_folder / "Trainings_data.csv")
+            train_probs = pd.read_csv(data_folder / "Trainings_data_proba.csv")
+            test_preds = pd.read_csv(data_folder / "Test_data.csv")
+            test_probs = pd.read_csv(data_folder / "Test_data_probabilities.csv")
+
+            # Add dataset name as prefix to column names (except 'Id' and 'Label')
+            for df in [train_preds, train_probs, test_preds, test_probs]:
+                df.columns = [f"{dataset}_{col}" if col not in ['Id', 'Label'] else col for col in df.columns]
+
+            combined_data['train_preds'].append(train_preds)
+            combined_data['train_probs'].append(train_probs)
+            combined_data['test_preds'].append(test_preds)
+            combined_data['test_probs'].append(test_probs)
+        except Exception as e:
+            logging.error(f"Error reading CSV files for dataset {dataset}: {str(e)}")
+            raise
+
+    # Concatenate DataFrames
+    for key in combined_data:
+        combined_data[key] = pd.concat(combined_data[key], axis=1)
+        # Remove duplicate 'Id' columns
+        combined_data[key] = combined_data[key].loc[:, ~combined_data[key].columns.duplicated()]
+
+    # Ensure 'Label' column is present in the final dataframes
+    label_column = combined_data['train_preds']['Label']
+    for key in combined_data:
+        if 'Label' not in combined_data[key].columns:
+            combined_data[key]['Label'] = label_column
+
+    # put label column at the end
+    for key in combined_data:
+        label = combined_data[key].pop('Label')
+        combined_data[key]['Label'] = label
+
+    if verbose:
+        for key, df in combined_data.items():
+            logging.info(f"Combined {key} shape: {df.shape}")
+
+    return (combined_data['train_preds'], combined_data['train_probs'],
+            combined_data['test_preds'], combined_data['test_probs'])

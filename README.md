@@ -66,3 +66,5 @@ python -m pip freeze > requirements.txt
     ```
     env\Scripts\deactivate
     ```
+
+## Folder Structure
