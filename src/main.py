@@ -349,8 +349,6 @@ def main(cfg: DictConfig):
                          f"metrics: \n {wmv_metrics}") if verbose else None
         seed += 1
 
-
-    # TODO: refactor the saving matrix of average results
     # Calculate average metrics across all runs
     average_metrics = utils.calculate_average_metrics(root_output_folder)
 
