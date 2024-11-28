@@ -217,14 +217,86 @@ def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,
     return train_predictions, train_probabilities, test_predictions, test_probabilities
 
 
-def combined_analysis(file_list, file_list_two, cfg, seed, verbose, train_predictions, train_probabilities,
+# def combined_analysis(file_list, file_list_two, cfg, seed, verbose, train_predictions, train_probabilities,
+#                       test_predictions, test_probabilities):
+#     """
+#     Processes two sets of tasks (e.g., ML and DL) and merges their results.
+#
+#     Args:
+#     file_list (list): List of files to process
+#     file_list_two (list): List of files to process for the second set
+#     cfg (object): Configuration object
+#     seed (int): Random seed
+#     verbose (bool): Verbosity flag
+#     train_predictions (pd.DataFrame): Initial train predictions dataframe
+#     train_probabilities (pd.DataFrame): Initial train probabilities dataframe
+#     test_predictions (pd.DataFrame): Initial test predictions dataframe
+#     test_probabilities (pd.DataFrame): Initial test probabilities dataframe
+#
+#     Returns:
+#     tuple: Merged train_preds, train_probs, test_preds, test_probs
+#     """
+#     # Process first set of tasks
+#     (first_train_preds, first_train_probs,
+#      first_test_preds, first_test_probs) = process_tasks(file_list, cfg, seed, verbose, cfg.data.type,
+#                                                          train_predictions, train_probabilities,
+#                                                          test_predictions, test_probabilities)
+#
+#     # Rename columns for first set
+#     first_train_preds = utils.rename_task_columns(first_train_preds, cfg.data.type)
+#     first_train_probs = utils.rename_task_columns(first_train_probs, cfg.data.type)
+#     first_test_preds = utils.rename_task_columns(first_test_preds, cfg.data.type)
+#     first_test_probs = utils.rename_task_columns(first_test_probs, cfg.data.type)
+#
+#     if verbose:
+#         logging.info(f"\n{first_train_preds}")
+#
+#     # Process second set of tasks if type_2 is specified
+#     if cfg.data.type_2 != "None":
+#         (second_train_preds, second_train_probs,
+#          second_test_preds, second_test_probs) = process_tasks(file_list_two, cfg, seed,
+#                                                                verbose, cfg.data.type_2,
+#                                                                train_predictions, train_probabilities,
+#                                                                test_predictions, test_probabilities)
+#
+#         # Rename columns for second set
+#         second_train_preds = utils.rename_task_columns(second_train_preds, cfg.data.type_2)
+#         second_train_probs = utils.rename_task_columns(second_train_probs, cfg.data.type_2)
+#         second_test_preds = utils.rename_task_columns(second_test_preds, cfg.data.type_2)
+#         second_test_probs = utils.rename_task_columns(second_test_probs, cfg.data.type_2)
+#
+#         # Drop the target column from the second set of predictions
+#         second_train_preds.drop(cfg.data.target, axis=1, inplace=True)
+#         second_train_probs.drop(cfg.data.target, axis=1, inplace=True)
+#         second_test_preds.drop(cfg.data.target, axis=1, inplace=True)
+#         second_test_probs.drop(cfg.data.target, axis=1, inplace=True)
+#
+#         # Merge the datasets
+#         train_preds = utils.merge_task_dataframes(first_train_preds, second_train_preds,
+#                                                   cfg.data.id, cfg.data.target)
+#         train_probs = utils.merge_task_dataframes(first_train_probs, second_train_probs,
+#                                                   cfg.data.id, cfg.data.target)
+#         test_preds = utils.merge_task_dataframes(first_test_preds, second_test_preds,
+#                                                  cfg.data.id, cfg.data.target)
+#         test_probs = utils.merge_task_dataframes(first_test_probs, second_test_probs,
+#                                                  cfg.data.id, cfg.data.target)
+#     else:
+#         # If there's no second type, just use the first set
+#         train_preds = first_train_preds
+#         train_probs = first_train_probs
+#         test_preds = first_test_preds
+#         test_probs = first_test_probs
+#
+#     return train_preds, train_probs, test_preds, test_probs
+
+
+def combined_analysis(file_lists, cfg, seed, verbose, train_predictions, train_probabilities,
                       test_predictions, test_probabilities):
     """
-    Processes two sets of tasks (e.g., ML and DL) and merges their results.
+    Processes multiple sets of tasks and merges their results.
 
     Args:
-    file_list (list): List of files to process
-    file_list_two (list): List of files to process for the second set
+    file_lists (list): List of lists where each inner list contains files to process
     cfg (object): Configuration object
     seed (int): Random seed
     verbose (bool): Verbosity flag
@@ -236,56 +308,60 @@ def combined_analysis(file_list, file_list_two, cfg, seed, verbose, train_predic
     Returns:
     tuple: Merged train_preds, train_probs, test_preds, test_probs
     """
-    # Process first set of tasks
-    (first_train_preds, first_train_probs,
-     first_test_preds, first_test_probs) = process_tasks(file_list, cfg, seed, verbose, cfg.data.type,
-                                                         train_predictions, train_probabilities,
-                                                         test_predictions, test_probabilities)
+    all_train_preds = []
+    all_train_probs = []
+    all_test_preds = []
+    all_test_probs = []
 
-    # Rename columns for first set
-    first_train_preds = utils.rename_task_columns(first_train_preds, cfg.data.type)
-    first_train_probs = utils.rename_task_columns(first_train_probs, cfg.data.type)
-    first_test_preds = utils.rename_task_columns(first_test_preds, cfg.data.type)
-    first_test_probs = utils.rename_task_columns(first_test_probs, cfg.data.type)
+    for idx, file_list in enumerate(file_lists):
+        data_type = cfg.data.type if idx == 0 else cfg.data.type_2
 
-    if verbose:
-        logging.info(f"\n{first_train_preds}")
+        if idx > 0 and data_type == "None":
+            continue
 
-    # Process second set of tasks if type_2 is specified
-    if cfg.data.type_2 != "None":
-        (second_train_preds, second_train_probs,
-         second_test_preds, second_test_probs) = process_tasks(file_list_two, cfg, seed,
-                                                               verbose, cfg.data.type_2,
-                                                               train_predictions, train_probabilities,
-                                                               test_predictions, test_probabilities)
+        # Process tasks for current list
+        train_preds, train_probs, test_preds, test_probs = process_tasks(
+            file_list, cfg, seed, verbose, data_type,
+            train_predictions, train_probabilities,
+            test_predictions, test_probabilities
+        )
 
-        # Rename columns for second set
-        second_train_preds = utils.rename_task_columns(second_train_preds, cfg.data.type_2)
-        second_train_probs = utils.rename_task_columns(second_train_probs, cfg.data.type_2)
-        second_test_preds = utils.rename_task_columns(second_test_preds, cfg.data.type_2)
-        second_test_probs = utils.rename_task_columns(second_test_probs, cfg.data.type_2)
+        # Rename columns
+        train_preds = utils.rename_task_columns(train_preds, data_type)
+        train_probs = utils.rename_task_columns(train_probs, data_type)
+        test_preds = utils.rename_task_columns(test_preds, data_type)
+        test_probs = utils.rename_task_columns(test_probs, data_type)
 
-        # Drop the target column from the second set of predictions
-        second_train_preds.drop(cfg.data.target, axis=1, inplace=True)
-        second_train_probs.drop(cfg.data.target, axis=1, inplace=True)
-        second_test_preds.drop(cfg.data.target, axis=1, inplace=True)
-        second_test_probs.drop(cfg.data.target, axis=1, inplace=True)
+        if verbose and idx == 0:
+            logging.info(f"\n{train_preds}")
 
-        # Merge the datasets
-        train_preds = utils.merge_task_dataframes(first_train_preds, second_train_preds,
+        # Drop target column for all but first set
+        if idx > 0:
+            train_preds.drop(cfg.data.target, axis=1, inplace=True)
+            train_probs.drop(cfg.data.target, axis=1, inplace=True)
+            test_preds.drop(cfg.data.target, axis=1, inplace=True)
+            test_probs.drop(cfg.data.target, axis=1, inplace=True)
+
+        all_train_preds.append(train_preds)
+        all_train_probs.append(train_probs)
+        all_test_preds.append(test_preds)
+        all_test_probs.append(test_probs)
+
+    # Merge all dataframes
+    train_preds = all_train_preds[0]
+    train_probs = all_train_probs[0]
+    test_preds = all_test_preds[0]
+    test_probs = all_test_probs[0]
+
+    for i in range(1, len(all_train_preds)):
+        train_preds = utils.merge_task_dataframes(train_preds, all_train_preds[i],
                                                   cfg.data.id, cfg.data.target)
-        train_probs = utils.merge_task_dataframes(first_train_probs, second_train_probs,
+        train_probs = utils.merge_task_dataframes(train_probs, all_train_probs[i],
                                                   cfg.data.id, cfg.data.target)
-        test_preds = utils.merge_task_dataframes(first_test_preds, second_test_preds,
+        test_preds = utils.merge_task_dataframes(test_preds, all_test_preds[i],
                                                  cfg.data.id, cfg.data.target)
-        test_probs = utils.merge_task_dataframes(first_test_probs, second_test_probs,
+        test_probs = utils.merge_task_dataframes(test_probs, all_test_probs[i],
                                                  cfg.data.id, cfg.data.target)
-    else:
-        # If there's no second type, just use the first set
-        train_preds = first_train_preds
-        train_probs = first_train_probs
-        test_preds = first_test_preds
-        test_probs = first_test_probs
 
     return train_preds, train_probs, test_preds, test_probs
 

@@ -71,7 +71,7 @@ def adjust_folder_structure(base_path):
 
 # Usage
 # base_path = Path.home() / 'Desktop' / 'DL'
-base_path = Path('/output/ML')
+base_path = Path('C:\\Users\\Emanuele\\Documents\\ProgettiPython\\bayesian-combining\\output\\DL')
 
 # check the path existance
 if base_path.exists():

@@ -387,11 +387,6 @@ def main(cfg: DictConfig):
     with open(time_file, 'w') as f:
         f.write(f"Elapsed time: {formatted_time} seconds")
 
-    # # Save the configuration file
-    # config_file = root_output_folder / "config.yaml"
-    # with open(config_file, 'w') as f:
-    #     OmegaConf.save(cfg, f)
-
 
 if __name__ == "__main__":
     main()
