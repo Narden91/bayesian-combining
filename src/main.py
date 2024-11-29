@@ -70,8 +70,7 @@ def main(cfg: DictConfig):
     except Exception as e:
         logging.error(f"Unexpected error in build_data_paths: {e}")
 
-    logging.info(f"Data paths: {data_paths}")
-
+    logging.info(f"Data paths: {data_paths}") if verbose else None
     # Load the CSV files
     # file_list = utils.load_csv_file(data_paths[0], cfg.data.extension)
     # file_list_comb = utils.load_csv_file(data_paths[1], cfg.data.extension) if len(data_paths) > 1 else None
@@ -103,14 +102,14 @@ def main(cfg: DictConfig):
 
     if len(output_folders.keys()) == 1:
         root_output_folder = list(output_folders.values())[0]
-        print(f"Output folder find: {root_output_folder}")
+        logging.info(f"Output folder find: {root_output_folder}") if verbose else None
     elif len(output_folders.keys()) > 1:
         if "combined" in output_folders:
             root_output_folder = output_folders["combined"]
-            print(f"Combined output folder: {root_output_folder}")
+            logging.info(f"Combined output folder: {root_output_folder}") if verbose else None
             for dataset, folder in output_folders.items():
                 if dataset != "combined":
-                    print(f"Output folder for {dataset}: {folder}")
+                    logging.info(f"Output folder for {dataset}: {folder}") if verbose else None
         else:
             raise ValueError("Multiple output folders found but no combined folder.")
 

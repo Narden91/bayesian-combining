@@ -6,8 +6,14 @@ import graphviz
 import numpy as np
 import pandas as pd
 from pgmpy.estimators import (
-    HillClimbSearch, ExhaustiveSearch, PC, TreeSearch,
-    BayesianEstimator, BicScore, K2Score, BDeuScore, BDsScore, AICScore
+    HillClimbSearch,
+    # GES,
+    MmhcEstimator,
+    # ExpertEstimator,
+    BicScore,
+    K2Score,
+    BDeuScore,
+    BDsScore, BayesianEstimator
 )
 from pgmpy.models import BayesianNetwork
 from pgmpy.inference import VariableElimination
@@ -18,68 +24,114 @@ from tqdm import tqdm
 def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions: pd.DataFrame,
                      df_predictions_proba: pd.DataFrame, df_test: pd.DataFrame) -> (list, pd.DataFrame, pd.DataFrame):
     """
-    Build a Bayesian Network using the predictions from the stacking models and perform classification on test data.
+    Build a Bayesian Network using multiple structure learning algorithms.
+
+    Supported algorithms:
+    - HillClimb: Score-based hill climbing
+    - GES: Greedy Equivalence Search
+    - MMHC: Max-Min Hill Climbing
+    - Expert: Expert-guided structure learning
     """
-    # Mapping algorithms and scoring metrics
     algorithm_mapping = {
         'HillClimb': HillClimbSearch,
-        'Exhaustive': ExhaustiveSearch,
-        'PC': PC,
-        'TreeSearch': TreeSearch
+        # 'GES': GESEstimator,
+        'MMHC': MmhcEstimator,
+        # 'Expert': ExpertEstimator
     }
 
     score_mapping = {
         'bic': BicScore,
         'k2': K2Score,
         'bdeu': BDeuScore,
-        'bds': BDsScore,
-        'aic': AICScore
+        'bds': BDsScore
     }
 
     if cfg.bayesian_net.algorithm not in algorithm_mapping:
         raise ValueError(f"Invalid algorithm: {cfg.bayesian_net.algorithm}")
 
-    # Setup scoring method
+    # Initialize base scoring method
     score_metric = score_mapping.get(cfg.bayesian_net.score_metric, BicScore)
     scoring_method = score_metric(df_predictions)
 
-    # Initialize structure learning
+    # Initialize structure learner
     bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions)
-
     logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
 
-    # Estimate structure with configured parameters
-    if cfg.bayesian_net.use_parents:
-        logging.info(f"Using max_parents = {cfg.bayesian_net.max_parents}")
-        best_model_stck = bn_model.estimate(
-            scoring_method=scoring_method, max_indegree=cfg.bayesian_net.max_parents
-        )
-    else:
-        logging.info("No max_parents constraint applied")
-        best_model_stck = bn_model.estimate(scoring_method=scoring_method)
+    # Set algorithm-specific parameters
+    if cfg.bayesian_net.algorithm == 'HillClimb':
+        estimate_params = {
+            'scoring_method': scoring_method,
+            'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
+            'black_list': cfg.bayesian_net.black_list if hasattr(cfg.bayesian_net, 'black_list') else None,
+            'white_list': cfg.bayesian_net.white_list if hasattr(cfg.bayesian_net, 'white_list') else None,
+            'fixed_edges': cfg.bayesian_net.fixed_edges if hasattr(cfg.bayesian_net, 'fixed_edges') else None,
+        }
+
+    elif cfg.bayesian_net.algorithm == 'GES':
+        estimate_params = {
+            'score': scoring_method,
+            'maxiter': cfg.bayesian_net.max_iter if hasattr(cfg.bayesian_net, 'max_iter') else 1000,
+            'phase': cfg.bayesian_net.phase if hasattr(cfg.bayesian_net, 'phase') else None,
+            'epsilon': cfg.bayesian_net.epsilon if hasattr(cfg.bayesian_net, 'epsilon') else 1e-4
+        }
+
+    elif cfg.bayesian_net.algorithm == 'MMHC':
+        estimate_params = {
+            'init_graph': cfg.bayesian_net.init_graph if hasattr(cfg.bayesian_net, 'init_graph') else None,
+            'significance_level': cfg.bayesian_net.significance_level,
+            'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
+            'score_function': scoring_method,
+            'max_iter': cfg.bayesian_net.max_iter if hasattr(cfg.bayesian_net, 'max_iter') else 1000,
+            'epsilon': cfg.bayesian_net.epsilon if hasattr(cfg.bayesian_net, 'epsilon') else 1e-4
+        }
+
+    elif cfg.bayesian_net.algorithm == 'Expert':
+        estimate_params = {
+            'tabu_length': cfg.bayesian_net.tabu_length if hasattr(cfg.bayesian_net, 'tabu_length') else 100,
+            'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
+            'black_list': cfg.bayesian_net.black_list if hasattr(cfg.bayesian_net, 'black_list') else None,
+            'white_list': cfg.bayesian_net.white_list if hasattr(cfg.bayesian_net, 'white_list') else None,
+            'fixed_edges': cfg.bayesian_net.fixed_edges if hasattr(cfg.bayesian_net, 'fixed_edges') else None,
+            'init_edges': cfg.bayesian_net.init_edges if hasattr(cfg.bayesian_net, 'init_edges') else None,
+            'score_function': scoring_method
+        }
+
+    # Clean None values from parameters
+    estimate_params = {k: v for k, v in estimate_params.items() if v is not None}
+
+    try:
+        best_model_stck = bn_model.estimate(**estimate_params)
+        logging.info(f"Successfully estimated network structure")
+    except Exception as e:
+        logging.error(f"Error during structure learning: {str(e)}")
+        raise
 
     nodes = set(sum(best_model_stck.edges(), ()))
     logging.info(f"Nodes in the Bayesian Network: {nodes}")
 
+    # Handle target node
     if cfg.data.target not in nodes:
         logging.warning(f"Target node {cfg.data.target} not found in the learned structure. Adding it manually.")
         best_model_stck.add_node(cfg.data.target)
-        example_node = next(iter(nodes))
-        best_model_stck.add_edge(cfg.data.target, example_node)
+        if nodes:
+            example_node = next(iter(nodes))
+            best_model_stck.add_edge(cfg.data.target, example_node)
 
     if cfg.data.target not in best_model_stck.nodes():
-        logging.error(f"Failed to add target node {cfg.data.target} to the Bayesian Network.")
-    else:
-        logging.info(f"Successfully added target node {cfg.data.target} to the Bayesian Network.")
+        raise ValueError(f"Failed to add target node {cfg.data.target} to the Bayesian Network.")
 
     model = BayesianNetwork(best_model_stck.edges())
 
-    # Fit model with specified parameter estimation method
-    model.fit(
-        df_predictions,
-        estimator=BayesianEstimator,
-        prior_type=cfg.bayesian_net.prior_type
-    )
+    try:
+        model.fit(
+            df_predictions,
+            estimator=BayesianEstimator,
+            prior_type=cfg.bayesian_net.prior_type
+        )
+        logging.info("Successfully fitted network parameters")
+    except Exception as e:
+        logging.error(f"Error during parameter estimation: {str(e)}")
+        raise
 
     if cfg.data.target not in model.nodes():
         logging.error(f"The node {cfg.data.target} is still not in the fitted Bayesian Network.")

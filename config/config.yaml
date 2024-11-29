@@ -14,7 +14,7 @@ hydra:
 
 settings:
   seed: 42
-  runs: 1
+  runs: 30
   verbose: False
   debug: False
   results_analysis: False
@@ -28,7 +28,7 @@ paths:
 
 data:
 #  dataset: ['ConvNeXtSmall', 'EfficientNetV2S', 'InceptionResNetV2', 'InceptionV3', 'All', 'InAir', 'OnPaper', 'InAirOnPaper']
-  dataset: ['ConvNeXtSmall', 'InAir'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
+  dataset: ['ConvNeXtSmall', 'InAir', 'All'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
   extension: csv
   separator: ","
   target: Label
@@ -42,7 +42,7 @@ model:
   name: DecisionTree # RandomForest, SVC, DecisionTree, XGB
 
 optuna:
-  n_trials: 2
+  n_trials: 20
 
 experiment:
   train_size: 0.7 # 0.5 for stacking Classification
@@ -57,9 +57,11 @@ experiment:
   stacking_model: LogisticRegression # MLP, LogisticRegression
 
 bayesian_net:
-  algorithm: HillClimb  # HillClimb, Exhaustive, PC, TreeSearch
+  algorithm: HillClimb  # HillClimb, Exhaustive, PC, TreeSearch, MMHC
   prior_type: BDeu  # BDeu, K2, Dirichlet
   score_metric: bic  # bic, k2, bdeu, bds, aic.  The score to be optimized during structure estimation.
   max_parents: 3 # 5
+  ci_test: 'pearsonr'  # For PC algorithm
+  significance_level: 0.05  # For PC algorithm
   use_parents: True
   verbose: False
