@@ -28,7 +28,7 @@ paths:
 
 data:
   #dataset: ['ConvNeXtSmall', 'EfficientNetV2S', 'InceptionResNetV2', 'InceptionV3', 'All', 'InAir', 'OnPaper', 'InAirOnPaper']
-  dataset: ['ConvNeXtSmall', 'InAir', 'All'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
+  dataset: ['ConvNeXtSmall', 'InAir'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
   extension: csv
   separator: ","
   target: Label
@@ -53,7 +53,7 @@ experiment:
   calibration: True
   calibration_method: isotonic
   calibration_cv: 5
-  stacking_method: Classification # Bayesian, Classification, MajorityVote, WeightedMajorityVote
+  stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
   stacking_model: MLP # MLP, LogisticRegression
 
 bayesian_net:

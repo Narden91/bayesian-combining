@@ -20,23 +20,28 @@ from pgmpy.inference import VariableElimination
 from pgmpy.metrics import log_likelihood_score, structure_score
 from tqdm import tqdm
 
-
 def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions: pd.DataFrame,
-                     df_predictions_proba: pd.DataFrame, df_test: pd.DataFrame) -> (list, pd.DataFrame, pd.DataFrame):
+                     df_predictions_proba: pd.DataFrame, df_test: pd.DataFrame,
+                     importance_tracker=None) -> tuple:
     """
-    Build a Bayesian Network using multiple structure learning algorithms.
+    Build a Bayesian Network using the predictions from the stacking models.
 
-    Supported algorithms:
-    - HillClimb: Score-based hill climbing
-    - GES: Greedy Equivalence Search
-    - MMHC: Max-Min Hill Climbing
-    - Expert: Expert-guided structure learning
+    Args:
+        cfg: Configuration dictionary
+        run_number: Current run number
+        run_folder: Path to the run folder
+        df_predictions: DataFrame with predictions
+        df_predictions_proba: DataFrame with prediction probabilities
+        df_test: Test data DataFrame
+        importance_tracker: BayesianImportanceTracker instance for tracking importance metrics
+
+    Returns:
+        tuple: (selected_columns, results_df_train, results_df_test, bic_score,
+               log_likelihood, log_likelihood_test)
     """
     algorithm_mapping = {
         'HillClimb': HillClimbSearch,
-        # 'GES': GESEstimator,
         'MMHC': MmhcEstimator,
-        # 'Expert': ExpertEstimator
     }
 
     score_mapping = {
@@ -167,6 +172,16 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
     except Exception as e:
         logging.error(f"Error calculating log likelihood on test data: {str(e)}")
         log_likelihood_test = 0
+
+    if importance_tracker is not None:
+        importance_tracker.add_run(
+            run_number=run_number,
+            model=model,
+            target_node=cfg.data.target,
+            log_likelihood=log_likelihood)
+
+    # if importance_tracker is not None:
+    #     importance_tracker.add_run(run_number, model, df_predictions, cfg.data.target)
 
     create_bn_visualization(model, cfg.data.target, run_folder, run_number)
     analyze_network_structure(model, cfg)

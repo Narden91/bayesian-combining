@@ -21,6 +21,7 @@ import results_analysis as ra
 import task_analysis as ta
 from explainability import analyze_stacking_model
 from importance_tracker import ImportanceTracker
+from bayesian_net_importance import BayesianImportanceTracker
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
@@ -41,6 +42,7 @@ def main(cfg: DictConfig):
     # endregion
 
     importance_tracker = None
+    bayesian_importance_tracker = None
 
     if cfg.settings.results_analysis:
         logging.info("Results analysis is enabled.")
@@ -127,6 +129,31 @@ def main(cfg: DictConfig):
                     logging.info("Successfully initialized importance tracker")
                 except Exception as e:
                     logging.error(f"Error setting up importance tracking: {str(e)}")
+            elif cfg.experiment.stacking_method == 'Bayesian':
+                # importance_analysis_dir = root_output_folder / "bayesian_importance_analysis"
+                # try:
+                #     os.makedirs(importance_analysis_dir, exist_ok=True)
+                #     logging.info(f"Created directory: {importance_analysis_dir}")
+                #
+                #     bayesian_importance_tracker = BayesianImportanceTracker(
+                #         importance_analysis_dir,
+                #         num_runs,
+                #         n_permutations=10
+                #     )
+                #     logging.info("Successfully initialized Bayesian importance tracker")
+                # except Exception as e:
+                #     logging.error(f"Error setting up Bayesian importance tracking: {str(e)}")
+                importance_analysis_dir = root_output_folder / "bayesian_importance_analysis"
+                try:
+                    os.makedirs(importance_analysis_dir, exist_ok=True)
+                    logging.info(f"Created directory: {importance_analysis_dir}")
+
+                    bayesian_importance_tracker = BayesianImportanceTracker(importance_analysis_dir, num_runs)
+                    logging.info("Successfully initialized Bayesian importance tracker")
+                except Exception as e:
+                    logging.error(f"Error setting up Bayesian importance tracking: {str(e)}")
+            else:
+                logging.warning(f"Importance tracking not supported for stacking method: {cfg.experiment.stacking_method}")
         else:
             raise ValueError("Multiple output folders found but no combined folder.")
 
@@ -261,10 +288,11 @@ def main(cfg: DictConfig):
 
         if cfg.experiment.stacking_method == 'Bayesian':
             (selected_columns, predictions_train, predictions_test, bic_score,
-             log_likelihood_train, log_likelihood_test) = bn.bayesian_network(cfg, run, run_folder,
-                                                                              stacking_trainings_data,
-                                                                              stacking_trainings_data_proba,
-                                                                              stacking_test_data)
+             log_likelihood_train, log_likelihood_test) = bn.bayesian_network(
+                cfg, run, run_folder, stacking_trainings_data,
+                stacking_trainings_data_proba, stacking_test_data,
+                importance_tracker=bayesian_importance_tracker
+            )
 
             # Evaluate results on training data
             y_true_train = stacking_trainings_data[cfg.data.target]
@@ -404,6 +432,24 @@ def main(cfg: DictConfig):
                 f"Feature importance analysis completed and saved in {root_output_folder}/feature_importance_analysis")
         except Exception as e:
             logging.error(f"Error generating final analysis: {str(e)}")
+
+    if bayesian_importance_tracker is not None:
+        logging.info("Generating final Bayesian Network importance analysis")
+        try:
+            bayesian_importance_tracker.generate_final_analysis(target_node=cfg.data.target)
+            logging.info(
+                f"Bayesian Network importance analysis completed and saved in "
+                f"{root_output_folder}/bayesian_importance_analysis"
+            )
+        except Exception as e:
+            logging.error(f"Error generating final Bayesian analysis: {str(e)}")
+
+    # if bayesian_importance_tracker is not None:
+    #     try:
+    #         bayesian_importance_tracker.generate_final_analysis()
+    #         logging.info("Bayesian Network importance analysis completed")
+    #     except Exception as e:
+    #         logging.error(f"Error generating Bayesian importance analysis: {str(e)}")
 
     # Calculate average metrics across all runs
     average_metrics = utils.calculate_average_metrics(root_output_folder)
