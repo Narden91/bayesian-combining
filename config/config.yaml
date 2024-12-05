@@ -14,7 +14,7 @@ hydra:
 
 settings:
   seed: 42
-  runs: 30
+  runs: 2
   verbose: False
   debug: False
   results_analysis: False
@@ -27,7 +27,7 @@ paths:
   output: output
 
 data:
-#  dataset: ['ConvNeXtSmall', 'EfficientNetV2S', 'InceptionResNetV2', 'InceptionV3', 'All', 'InAir', 'OnPaper', 'InAirOnPaper']
+  #dataset: ['ConvNeXtSmall', 'EfficientNetV2S', 'InceptionResNetV2', 'InceptionV3', 'All', 'InAir', 'OnPaper', 'InAirOnPaper']
   dataset: ['ConvNeXtSmall', 'InAir', 'All'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
   extension: csv
   separator: ","
@@ -42,7 +42,7 @@ model:
   name: DecisionTree # RandomForest, SVC, DecisionTree, XGB
 
 optuna:
-  n_trials: 20
+  n_trials: 2
 
 experiment:
   train_size: 0.7 # 0.5 for stacking Classification
@@ -53,8 +53,8 @@ experiment:
   calibration: True
   calibration_method: isotonic
   calibration_cv: 5
-  stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
-  stacking_model: LogisticRegression # MLP, LogisticRegression
+  stacking_method: Classification # Bayesian, Classification, MajorityVote, WeightedMajorityVote
+  stacking_model: MLP # MLP, LogisticRegression
 
 bayesian_net:
   algorithm: HillClimb  # HillClimb, Exhaustive, PC, TreeSearch, MMHC

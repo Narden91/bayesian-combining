@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.inspection import permutation_importance
 from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
 import utils
 import hyperparameters as hp
@@ -18,6 +19,8 @@ import classification as clf
 import main_process as mp
 import results_analysis as ra
 import task_analysis as ta
+from explainability import analyze_stacking_model
+from importance_tracker import ImportanceTracker
 
 
 @hydra.main(version_base=None, config_path="../config", config_name="config")
@@ -36,6 +39,8 @@ def main(cfg: DictConfig):
     verbose = cfg.settings.verbose
     debug = cfg.settings.debug
     # endregion
+
+    importance_tracker = None
 
     if cfg.settings.results_analysis:
         logging.info("Results analysis is enabled.")
@@ -103,6 +108,7 @@ def main(cfg: DictConfig):
     if len(output_folders.keys()) == 1:
         root_output_folder = list(output_folders.values())[0]
         logging.info(f"Output folder find: {root_output_folder}") if verbose else None
+
     elif len(output_folders.keys()) > 1:
         if "combined" in output_folders:
             root_output_folder = output_folders["combined"]
@@ -110,6 +116,17 @@ def main(cfg: DictConfig):
             for dataset, folder in output_folders.items():
                 if dataset != "combined":
                     logging.info(f"Output folder for {dataset}: {folder}") if verbose else None
+            if cfg.experiment.stacking_method == 'Classification':
+                logging.info("Classification method detected - setting up importance tracking")
+                importance_analysis_dir = root_output_folder / "feature_importance_analysis"
+                try:
+                    os.makedirs(importance_analysis_dir, exist_ok=True)
+                    logging.info(f"Created directory: {importance_analysis_dir}")
+
+                    importance_tracker = ImportanceTracker(importance_analysis_dir, num_runs)
+                    logging.info("Successfully initialized importance tracker")
+                except Exception as e:
+                    logging.error(f"Error setting up importance tracking: {str(e)}")
         else:
             raise ValueError("Multiple output folders found but no combined folder.")
 
@@ -317,6 +334,36 @@ def main(cfg: DictConfig):
             y_pred_stck = stacking_model.predict(X_test_stck)
             y_pred_proba_stck = stacking_model.predict_proba(X_test_stck)
 
+            # analysis_results = analyze_stacking_model(
+            #     model=stacking_model,
+            #     X_test=X_test_stck,
+            #     y_test=y_true_stck,
+            #     y_pred=y_pred_stck,
+            #     y_pred_proba=y_pred_proba_stck,
+            #     output_dir=run_folder / "explainability"
+            # )
+            #
+            # logging.info(f"Model analysis completed. Results saved in {run_folder}/explainability/")
+
+            if importance_tracker is not None:
+                logging.info(f"Recording importance scores for run {run + 1}")
+                try:
+                    importance_scores = permutation_importance(
+                        stacking_model, X_test_stck, y_true_stck,
+                        n_repeats=10, random_state=seed
+                    ).importances_mean
+
+                    importance_tracker.add_run(
+                        run_number=run + 1,
+                        importance_scores=importance_scores,
+                        feature_names=X_test_stck.columns
+                    )
+                    logging.info(f"Successfully recorded importance scores for run {run + 1}")
+                except Exception as e:
+                    logging.error(f"Error recording importance scores: {str(e)}")
+            else:
+                logging.warning("Importance tracker not initialized, skipping importance analysis")
+
             stck_metrics = utils.compute_metrics(y_true_stck, y_pred_stck)
             filename_stck = run_folder / f"stacking_{cfg.experiment.stacking_model}_metrics_{run + 1}.csv"
             utils.save_metrics_to_csv(stck_metrics, filename_stck, run_number=run + 1, verbose=verbose)
@@ -347,6 +394,16 @@ def main(cfg: DictConfig):
             logging.info(f"Weighted Majority Vote, using first level predictions, "
                          f"metrics: \n {wmv_metrics}") if verbose else None
         seed += 1
+
+    # Generate final importance analysis if tracker was used
+    if importance_tracker is not None:
+        logging.info("Generating final importance analysis")
+        try:
+            importance_tracker.generate_final_analysis()
+            logging.info(
+                f"Feature importance analysis completed and saved in {root_output_folder}/feature_importance_analysis")
+        except Exception as e:
+            logging.error(f"Error generating final analysis: {str(e)}")
 
     # Calculate average metrics across all runs
     average_metrics = utils.calculate_average_metrics(root_output_folder)
