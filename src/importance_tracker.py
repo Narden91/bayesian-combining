@@ -13,9 +13,9 @@ class ImportanceTracker:
         self.importances = []
         self.base_output_dir.mkdir(parents=True, exist_ok=True)
 
-    def add_run(self, run_number: int, importance_scores, feature_names):
+    def add_run(self, run_number: int, importance_scores, task_names):
         run_df = pd.DataFrame({
-            'feature': feature_names,
+            'task': task_names,
             'importance': importance_scores,
             'run': run_number
         })
@@ -26,7 +26,7 @@ class ImportanceTracker:
         all_runs = pd.concat(self.importances, ignore_index=True)
 
         # Calculate statistics
-        summary = all_runs.groupby('feature').agg({
+        summary = all_runs.groupby('task').agg({
             'importance': ['mean', 'std', 'min', 'max', 'count']
         }).droplevel(0, axis=1)
 
@@ -39,16 +39,16 @@ class ImportanceTracker:
         # Calculate top 10 frequency
         top_10_counts = {}
         for _, run_df in enumerate(self.importances):
-            top_features = run_df.nlargest(10, 'importance')['feature']
-            for feature in top_features:
-                top_10_counts[feature] = top_10_counts.get(feature, 0) + 1
+            top_tasks = run_df.nlargest(10, 'importance')['task']
+            for task in top_tasks:
+                top_10_counts[task] = top_10_counts.get(task, 0) + 1
 
         # Add top 10 percentage and fill NaN with 0
         summary['top_10_percentage'] = pd.Series(top_10_counts) / self.n_runs * 100
         summary['top_10_percentage'] = summary['top_10_percentage'].fillna(0)
 
         # Save summary to CSV with better formatting
-        summary.to_csv(self.base_output_dir / 'feature_importance_summary.csv',
+        summary.to_csv(self.base_output_dir / 'task_importance_summary.csv',
                        float_format='%.4f')
 
         # Create visualization
@@ -61,8 +61,8 @@ class ImportanceTracker:
             plt.yticks(range(len(top_20)), top_20.index)
         else:
             # Use boxplot for multiple runs
-            top_20_data = all_runs[all_runs['feature'].isin(top_20.index)]
-            sns.boxplot(data=top_20_data, x='importance', y='feature',
+            top_20_data = all_runs[all_runs['task'].isin(top_20.index)]
+            sns.boxplot(data=top_20_data, x='importance', y='task',
                         order=top_20.index, whis=1.5)
 
         # Add error bars for multiple runs
@@ -80,22 +80,22 @@ class ImportanceTracker:
                      fontsize=10)
 
         plt.xlabel('Importance Score')
-        plt.ylabel('Feature')
-        plt.title('Feature Importance Distribution Across All Runs (Top 20 Features)')
+        plt.ylabel('Task')
+        plt.title('Task Importance Distribution Across All Runs (Top 20 Tasks)')
         plt.tight_layout()
-        plt.savefig(self.base_output_dir / 'feature_importance_distribution.png',
+        plt.savefig(self.base_output_dir / 'task_importance_distribution.png',
                     bbox_inches='tight', dpi=300)
         plt.close()
 
         # Generate detailed report
-        with open(self.base_output_dir / 'feature_importance_report.txt', 'w') as f:
-            f.write("Feature Importance Analysis Summary\n")
+        with open(self.base_output_dir / 'task_importance_report.txt', 'w') as f:
+            f.write("Task Importance Analysis Summary\n")
             f.write(f"Based on {self.n_runs} experimental run{'s' if self.n_runs > 1 else ''}\n\n")
-            f.write("Top 10 Most Important Features:\n\n")
+            f.write("Top 10 Most Important Tasks:\n\n")
 
-            for feature in summary.head(10).index:
-                stats = summary.loc[feature]
-                f.write(f"{feature}:\n")
+            for task in summary.head(10).index:
+                stats = summary.loc[task]
+                f.write(f"{task}:\n")
                 f.write(f"  Mean Importance: {stats['mean']:.4f}")
                 if self.n_runs > 1:
                     f.write(f" ± {stats['std']:.4f}")

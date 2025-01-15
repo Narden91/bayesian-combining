@@ -384,7 +384,7 @@ def main(cfg: DictConfig):
                     importance_tracker.add_run(
                         run_number=run + 1,
                         importance_scores=importance_scores,
-                        feature_names=X_test_stck.columns
+                        task_names=X_test_stck.columns
                     )
                     logging.info(f"Successfully recorded importance scores for run {run + 1}")
                 except Exception as e:
@@ -405,7 +405,7 @@ def main(cfg: DictConfig):
             logging.info(f"Majority Vote predictions: \n {mv_pred}") if verbose else None
 
             mv_metrics = utils.compute_metrics(y_true_test, mv_pred)
-            filename_mv = run_folder / f"weighted_majority_vote_metrics_{run + 1}.csv"
+            filename_mv = run_folder / f"majority_vote_metrics_{run + 1}.csv"
             utils.save_metrics_to_csv(mv_metrics, filename_mv, run_number=run + 1, verbose=verbose)
             logging.info(f"Majority Vote, using first level predictions,metrics: \n {mv_metrics}") if verbose else None
         elif cfg.experiment.stacking_method == 'WeightedMajorityVote':

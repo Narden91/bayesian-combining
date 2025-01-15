@@ -54,7 +54,7 @@ experiment:
   calibration_method: isotonic
   calibration_cv: 5
   stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
-  stacking_model: MLP # MLP, LogisticRegression
+  stacking_model: LogisticRegression # MLP, LogisticRegression
 
 bayesian_net:
   algorithm: HillClimb  # HillClimb, Exhaustive, PC, TreeSearch, MMHC
