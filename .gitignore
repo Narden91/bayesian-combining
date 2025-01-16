@@ -170,5 +170,7 @@ poetry.toml
 .ionide
 
 data/*
+.idea/*
+output/*
 
 ### Directories ###
