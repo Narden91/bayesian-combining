@@ -37,18 +37,6 @@ def get_output_folder(output_paths: List[Path], analysis_type: str, cfg: DictCon
             raise ValueError(f"Invalid stacking method: {cfg.experiment.stacking_method}")
         return path
 
-    # def add_model_and_stacking(path: Path) -> Path:
-    #     path = path / f"{cfg.model.name}"
-    #     if cfg.experiment.stacking_method == 'Classification':
-    #         path = path / f"{cfg.experiment.stacking_model}_stacking"
-    #     elif cfg.experiment.stacking_method in ['MajorityVote', 'WeightedMajorityVote']:
-    #         path = path / f"{cfg.experiment.stacking_method}"
-    #     elif cfg.experiment.stacking_method == 'Bayesian':
-    #         path = path / f"{cfg.experiment.stacking_method}_{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.prior_type}"
-    #     else:
-    #         raise ValueError(f"Invalid stacking method: {cfg.experiment.stacking_method}")
-    #     return path
-
     if analysis_type == "Combined":
         # Create a folder name that combines all dataset names
         datasets = "_".join(path.name for path in output_paths)
@@ -269,57 +257,6 @@ def read_existing_data(run_folder: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd
     except FileNotFoundError as e:
         logging.error(f"Error reading existing data: {e}")
         return None, None, None, None
-
-
-def mod_predictions(df: pd.DataFrame, target: str = "Label") -> pd.DataFrame:
-    """
-    Modify the predictions dataframe by filling NaN values with random binary values and converting the columns to
-    integer type.
-    :param df: pd.DataFrame
-    :param target: str
-    :return: pd.DataFrame
-    """
-
-    def random_binary_fill(x):
-        return x if pd.notnull(x) else random.choice([0, 1])
-
-    # Apply random filling to all columns except 'Label'
-    for col in df.columns:
-        if col != target:
-            df[col] = df[col].apply(random_binary_fill)
-
-    # Ensure all columns are of type int
-    for col in df.columns:
-        df[col] = df[col].astype(int)
-
-    return df
-
-
-def mod_proba_predictions(df: pd.DataFrame, target: str = "Label") -> pd.DataFrame:
-    """
-    Modify the predictions probability dataframe by filling NaN values with random values and converting the columns to
-    float type.
-    :param df: pd.DataFrame
-    :param target: str
-    :return: pd.DataFrame
-    """
-
-    def random_fill(x):
-        return x if pd.notnull(x) else random.uniform(0, 1)
-
-    # Apply random filling to all columns except 'Label'
-    for col in df.columns:
-        if col != target:
-            df[col] = df[col].apply(random_fill)
-
-    # Ensure all columns are of type float
-    for col in df.columns:
-        if col != target:
-            df[col] = df[col].astype(float)
-        else:
-            df[col] = df[col].astype(int)
-
-    return df
 
 
 def compute_metrics(y_true, y_pred) -> pd.DataFrame:

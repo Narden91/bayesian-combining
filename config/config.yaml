@@ -19,8 +19,6 @@ settings:
   debug: False
   results_analysis: False
   type: DL # ML or DL
-  tasks: False
-  task_list: ["Task_16", "Task_21"]
 
 paths:
   source: data
@@ -56,21 +54,10 @@ experiment:
   stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
   stacking_model: LogisticRegression # MLP, LogisticRegression
 
-#bayesian_net:
-#  algorithm: Tree  # HillClimb, PC, Tree, MMHC
-#  prior_type: BDeu  # BDeu, K2, Dirichlet
-#  use_cache: True
-#  score_metric: bic  # bic, k2, bdeu, bds, aic.  The score to be optimized during structure estimation.
-#  max_parents: 3 # 3, 5, 7
-#  ci_test: 'pearsonr'  # For PC algorithm
-#  significance_level: 0.05  # For PC algorithm
-#  use_parents: True
-#  verbose: False
-
 bayesian_net:
   algorithm: HillClimb  # HillClimb, MMHC, PC, Tree
   score_metric: bic  # or k2, bdeu, bds
-  prior_type: BDeu  # or K2
+  prior_type: K2  # or K2
   use_parents: true
   max_parents: 3
   significance_level: 0.05  # for PC and MMHC

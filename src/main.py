@@ -13,6 +13,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.inspection import permutation_importance
 from sklearn.model_selection import train_test_split, KFold, StratifiedKFold
 import utils
+from output_management import OutputManager
 import hyperparameters as hp
 import preprocessing as prep
 import bayesian_network as bn
@@ -42,41 +43,17 @@ def main(cfg: DictConfig):
     debug = cfg.settings.debug
     # endregion
 
-    importance_tracker = None
-    bayesian_importance_tracker = None
-
-    if cfg.settings.results_analysis:
-        logging.info("Results analysis is enabled.")
-        output_results = output_path / Path(cfg.settings.type)
-        # output_results = output_path / Path("Tasks_analysis") / "XGB_base_clf_Task_16_Task_21" #XGB_base_clf_Task_16_Task_21
-        # ra.result_analysis(output_results)
-        # ra.result_analysis(output_path, cfg.data.type)  # Organizzare le metriche
-        # ra.result_analysis_tasks(output_path, cfg.settings.type)  # Performance Tasks base
-        ra.traverse_and_count_tasks_separately(output_results)  # occorrenze task Markov Blanket
-
-        task_counts, average_elements = ra.count_tasks_in_mb(output_results)
-        output_results_name = output_results.parts[-1]
-        csv_file_path = f"{output_results_name}_task_counts.csv"
-
-        # Write the task counts to a CSV file
-        with open(csv_file_path, mode='w', newline='') as csvfile:
-            # Create a CSV writer object
-            writer = csv.writer(csvfile)
-            writer.writerow(task_counts.keys())
-            writer.writerow(task_counts.values())
-
-        logging.info(f"Task counts: {task_counts}") if verbose else None
-        logging.info(f"Average elements: {average_elements}") if verbose else None
-        return
-    else:
-        logging.info("Results analysis is disabled.")
+    # Initialize the output manager
+    output_manager = OutputManager(cfg, verbose=verbose)
 
     try:
         data_paths, output_paths, analysis_type = utils.build_data_paths(cfg, data_parent_path, output_path)
     except ValueError as e:
         logging.error(f"Error in build_data_paths: {e}")
+        raise
     except Exception as e:
         logging.error(f"Unexpected error in build_data_paths: {e}")
+        raise
 
     logging.info(f"Data paths: {data_paths}") if verbose else None
 
@@ -91,63 +68,15 @@ def main(cfg: DictConfig):
     logging.info(f"Tasks: {num_tasks}")
     logging.info(f"Analysis Type: {analysis_type}")
 
-    if not cfg.settings.tasks:
-        try:
-            output_folders = utils.get_output_folder(output_paths, analysis_type, cfg)
-        except ValueError as e:
-            print(f"Error: {e}")
-    else:
-        if not isinstance(output_paths, list):
-            clf_name = "XGB_base_clf"
-            root_output_folder = output_path / "Tasks_analysis" / clf_name
-            os.makedirs(root_output_folder) if not root_output_folder.exists() else None
-        else:
-            raise ValueError("Tasks analysis is not supported for combined analysis yet.")
-
-    logging.info(f"Output folders: {output_folders}") if verbose else None
-
-    if len(output_folders.keys()) == 1:
-        root_output_folder = list(output_folders.values())[0]
-        logging.info(f"Output folder find: {root_output_folder}") if verbose else None
-    elif len(output_folders.keys()) > 1:
-        if "combined" in output_folders:
-            root_output_folder = output_folders["combined"]
-            logging.info(f"Combined output folder: {root_output_folder}") if verbose else None
-            for dataset, folder in output_folders.items():
-                if dataset != "combined":
-                    logging.info(f"Output folder for {dataset}: {folder}") if verbose else None
-            if cfg.experiment.stacking_method == 'Classification':
-                logging.info("Classification method detected - setting up importance tracking")
-                importance_analysis_dir = root_output_folder / "feature_importance_analysis"
-                try:
-                    os.makedirs(importance_analysis_dir, exist_ok=True)
-                    logging.info(f"Created directory: {importance_analysis_dir}")
-
-                    importance_tracker = ImportanceTracker(importance_analysis_dir, num_runs)
-                    logging.info("Successfully initialized importance tracker")
-                except Exception as e:
-                    logging.error(f"Error setting up importance tracking: {str(e)}")
-            elif cfg.experiment.stacking_method == 'Bayesian':
-                # Rename the bayesian folder name based on the algorithm and score metric
-                if os.path.exists(root_output_folder):
-                    shutil.rmtree(root_output_folder)
-
-                root_output_folder = root_output_folder.with_name(
-                    f"{root_output_folder.name}_{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.score_metric}"
-                )
-                importance_analysis_dir = root_output_folder / "bayesian_importance_analysis"
-                try:
-                    os.makedirs(importance_analysis_dir, exist_ok=True)
-                    logging.info(f"Created directory: {importance_analysis_dir}")
-
-                    bayesian_importance_tracker = BayesianImportanceTracker(importance_analysis_dir, num_runs)
-                    logging.info("Successfully initialized Bayesian importance tracker")
-                except Exception as e:
-                    logging.error(f"Error setting up Bayesian importance tracking: {str(e)}")
-            else:
-                logging.warning(f"Importance tracking not supported for stacking method: {cfg.experiment.stacking_method}")
-        else:
-            raise ValueError("Multiple output folders found but no combined folder.")
+    try:
+        root_folder, output_folders = output_manager.setup_output_structure(
+            output_paths=output_paths,
+            analysis_type=analysis_type,
+            num_runs=num_runs
+        )
+    except Exception as e:
+        logging.error(f"Error setting up output structure: {e}")
+        raise
 
     data_flag = utils.check_existing_data(output_folders)
     read_data = False
@@ -156,8 +85,7 @@ def main(cfg: DictConfig):
     start_time = time.time()
 
     for run in range(num_runs):
-        run_folder = root_output_folder / f"run_{run + 1}"
-        os.makedirs(run_folder) if not run_folder.exists() else None
+        run_folder = output_manager.create_run_folder(root_folder, run + 1)
 
         seed = global_seed + run
         logging.info(f"-------------------Run {run + 1} | Seed: {seed}-------------------")
@@ -170,112 +98,95 @@ def main(cfg: DictConfig):
 
         logging.info(f"Run folder: {run_folder}") if verbose else None
 
-        if not cfg.settings.tasks:
-            logging.info("Tasks analysis disabled.") if verbose else None
-            if analysis_type in ["ML", "DL"]:
-                logging.info(f"{analysis_type} Analysis") if verbose else None
+        if analysis_type in ["ML", "DL"]:
+            logging.info(f"{analysis_type} Analysis") if verbose else None
 
-                if data_flag:
-                    logging.info("Existing data found.") if verbose else None
-                    train_preds, train_probs, test_preds, test_probs = utils.read_existing_data(run_folder)
+            if data_flag:
+                logging.info("Existing data found.") if verbose else None
+                train_preds, train_probs, test_preds, test_probs = utils.read_existing_data(run_folder)
 
-                    logging.info(f"Train predictions: \n {train_preds}") if verbose else None
-                    logging.info(f"Train probabilities: \n {train_probs}") if verbose else None
-                    logging.info(f"Test predictions: \n {test_preds}") if verbose else None
-                    logging.info(f"Test probabilities: \n {test_probs}") if verbose else None
-                    read_data = True
-                else:
-                    train_preds, train_probs, test_preds, test_probs = mp.process_tasks(file_lists[0], cfg, seed,
-                                                                                        verbose,
-                                                                                        analysis_type,
-                                                                                        train_predictions,
-                                                                                        train_probabilities,
-                                                                                        test_predictions,
-                                                                                        test_probabilities)
-            elif analysis_type == "Combined":
-                logging.info(f"Combined Analysis") if verbose else None
-
-                # Check if all required datasets have existing data
-                all_data_exists = all(
-                    (folder / f"run_{run + 1}" / "First_level_data" / "Trainings_data.csv").exists() and
-                    (folder / f"run_{run + 1}" / "First_level_data" / "Trainings_data_proba.csv").exists() and
-                    (folder / f"run_{run + 1}" / "First_level_data" / "Test_data.csv").exists() and
-                    (folder / f"run_{run + 1}" / "First_level_data" / "Test_data_probabilities.csv").exists()
-                    for folder in output_folders.values() if folder != output_folders.get("combined")
+                logging.info(f"Train predictions: \n {train_preds}") if verbose else None
+                logging.info(f"Train probabilities: \n {train_probs}") if verbose else None
+                logging.info(f"Test predictions: \n {test_preds}") if verbose else None
+                logging.info(f"Test probabilities: \n {test_probs}") if verbose else None
+                read_data = True
+            else:
+                train_preds, train_probs, test_preds, test_probs = mp.process_tasks(
+                    file_lists[0], cfg, seed, verbose, analysis_type,
+                    train_predictions, train_probabilities,
+                    test_predictions, test_probabilities
                 )
+        elif analysis_type == "Combined":
+            logging.info(f"Combined Analysis") if verbose else None
 
-                if all_data_exists:
-                    logging.info("Existing data found for all datasets. Combining directly.") if verbose else None
+            # Check if all required datasets have existing data
+            all_data_exists = all(
+                (folder / f"run_{run + 1}" / "First_level_data" / "Trainings_data.csv").exists() and
+                (folder / f"run_{run + 1}" / "First_level_data" / "Trainings_data_proba.csv").exists() and
+                (folder / f"run_{run + 1}" / "First_level_data" / "Test_data.csv").exists() and
+                (folder / f"run_{run + 1}" / "First_level_data" / "Test_data_probabilities.csv").exists()
+                for folder in output_folders.values() if folder != output_folders.get("combined")
+            )
 
-                    try:
-                        train_preds, train_probs, test_preds, test_probs = mp.combine_datasets(output_folders, run + 1,
-                                                                                               verbose)
-                        if verbose:
-                            logging.info(f"Combined train predictions: {train_preds}")
-                            logging.info(f"Combined train probabilities: {train_probs}")
-                            logging.info(f"Combined test predictions: {test_preds}")
-                            logging.info(f"Combined test probabilities: {test_probs}")
-                        read_data = True
-                    except Exception as e:
-                        logging.error(f"Error combining datasets: {str(e)}")
-                        raise e
-                else:
-                    logging.info("Processing datasets as not all have existing data.") if verbose else None
-                    train_preds, train_probs, test_preds, test_probs = mp.combined_analysis(file_lists, cfg, seed,
-                                                                                            verbose,
-                                                                                            train_predictions,
-                                                                                            train_probabilities,
-                                                                                            test_predictions,
-                                                                                            test_probabilities)
+            if all_data_exists:
+                logging.info("Existing data found for all datasets. Combining directly.") if verbose else None
+                try:
+                    train_preds, train_probs, test_preds, test_probs = mp.combine_datasets(
+                        output_folders, run + 1, verbose
+                    )
+                    if verbose:
+                        logging.info(f"Combined train predictions: {train_preds}")
+                        logging.info(f"Combined train probabilities: {train_probs}")
+                        logging.info(f"Combined test predictions: {test_preds}")
+                        logging.info(f"Combined test probabilities: {test_probs}")
+                    read_data = True
+                except Exception as e:
+                    logging.error(f"Error combining datasets: {str(e)}")
+                    raise
             else:
-                raise ValueError(f"Analysis type {analysis_type} not recognized.")
-
-            if not read_data:
-                # Prepare stacking data
-                stacking_trainings_data = train_preds.drop(cfg.data.id, axis=1)
-                stacking_trainings_data_proba = train_probs.drop(cfg.data.id, axis=1)
-                stacking_test_data = test_preds.drop(cfg.data.id, axis=1)
-                stacking_test_data_probabilities = test_probs.drop(cfg.data.id, axis=1)
-
-                # Map predictions to -1 and 1 for non-probability dataframes
-                stacking_trainings_data.replace({0: -1}, inplace=True)
-                stacking_test_data.replace({0: -1}, inplace=True)
-
-                # Map only the 'Label' column for probability dataframes
-                stacking_trainings_data_proba[cfg.data.target] = stacking_trainings_data_proba[cfg.data.target].replace(
-                    {0: -1})
-                stacking_test_data_probabilities[cfg.data.target] = stacking_test_data_probabilities[
-                    cfg.data.target].replace({0: -1})
-
-                first_level_data_folder = run_folder / "First_level_data"
-                os.makedirs(first_level_data_folder) if not first_level_data_folder.exists() else None
-
-                # Save the stacking data and probabilities to csv files
-                stacking_trainings_data.to_csv(first_level_data_folder / f"Trainings_data.csv", index=False)
-                stacking_trainings_data_proba.to_csv(first_level_data_folder / f"Trainings_data_proba.csv", index=False)
-                stacking_test_data.to_csv(first_level_data_folder / f"Test_data.csv", index=False)
-                stacking_test_data_probabilities.to_csv(first_level_data_folder / f"Test_data_probabilities.csv",
-                                                        index=False)
-
-                logging.info(f"Stacking trainings data: \n {stacking_trainings_data}") if debug else None
-                logging.info(f"Stacking trainings data proba: \n {stacking_trainings_data_proba}") if debug else None
-                logging.info(f"Stacking test data predictions: \n {stacking_test_data}") if debug else None
-                logging.info(
-                    f"Stacking test data probabilities: \n {stacking_test_data_probabilities}") if debug else None
-            else:
-                logging.info("Data read from existing files, no further manipulation.") if verbose else None
-                stacking_trainings_data = train_preds
-                stacking_trainings_data_proba = train_probs
-                stacking_test_data = test_preds
-                stacking_test_data_probabilities = test_probs
-
+                logging.info("Processing datasets as not all have existing data.") if verbose else None
+                train_preds, train_probs, test_preds, test_probs = mp.combined_analysis(
+                    file_lists, cfg, seed, verbose,
+                    train_predictions, train_probabilities,
+                    test_predictions, test_probabilities
+                )
         else:
-            task_list = list(cfg.settings.task_list)
-            logging.info(f"Tasks analysis enabled on tasks: {task_list} | len: {len(task_list)}")
+            raise ValueError(f"Analysis type {analysis_type} not recognized.")
 
-            (stacking_test_data, stacking_test_data_probabilities,
-             stacking_trainings_data, stacking_trainings_data_proba) = ta.get_predictions_df(output_path, run + 1,
-                                                                                             task_list, clf_name)
+        if not read_data:
+            # Prepare stacking data
+            stacking_trainings_data = train_preds.drop(cfg.data.id, axis=1)
+            stacking_trainings_data_proba = train_probs.drop(cfg.data.id, axis=1)
+            stacking_test_data = test_preds.drop(cfg.data.id, axis=1)
+            stacking_test_data_probabilities = test_probs.drop(cfg.data.id, axis=1)
+
+            # Map predictions to -1 and 1 for non-probability dataframes
+            stacking_trainings_data.replace({0: -1}, inplace=True)
+            stacking_test_data.replace({0: -1}, inplace=True)
+
+            # Map only the 'Label' column for probability dataframes
+            stacking_trainings_data_proba[cfg.data.target] = stacking_trainings_data_proba[cfg.data.target].replace({0: -1})
+            stacking_test_data_probabilities[cfg.data.target] = stacking_test_data_probabilities[cfg.data.target].replace({0: -1})
+
+            first_level_data_folder = run_folder / "First_level_data"
+            os.makedirs(first_level_data_folder, exist_ok=True)
+
+            # Save the stacking data and probabilities to csv files
+            stacking_trainings_data.to_csv(first_level_data_folder / f"Trainings_data.csv", index=False)
+            stacking_trainings_data_proba.to_csv(first_level_data_folder / f"Trainings_data_proba.csv", index=False)
+            stacking_test_data.to_csv(first_level_data_folder / f"Test_data.csv", index=False)
+            stacking_test_data_probabilities.to_csv(first_level_data_folder / f"Test_data_probabilities.csv", index=False)
+
+            logging.info(f"Stacking trainings data: \n {stacking_trainings_data}") if debug else None
+            logging.info(f"Stacking trainings data proba: \n {stacking_trainings_data_proba}") if debug else None
+            logging.info(f"Stacking test data predictions: \n {stacking_test_data}") if debug else None
+            logging.info(f"Stacking test data probabilities: \n {stacking_test_data_probabilities}") if debug else None
+        else:
+            logging.info("Data read from existing files, no further manipulation.") if verbose else None
+            stacking_trainings_data = train_preds
+            stacking_trainings_data_proba = train_probs
+            stacking_test_data = test_preds
+            stacking_test_data_probabilities = test_probs
 
         logging.info(f"-------------------Second Level Classification for Run {run + 1} -------------------")
 
@@ -284,7 +195,7 @@ def main(cfg: DictConfig):
              log_likelihood_train, log_likelihood_test) = bn.bayesian_network(
                 cfg, run, run_folder, stacking_trainings_data,
                 stacking_trainings_data_proba, stacking_test_data,
-                importance_tracker=bayesian_importance_tracker
+                importance_tracker=output_manager.bayesian_tracker
             )
 
             # Evaluate results on training data
@@ -355,18 +266,7 @@ def main(cfg: DictConfig):
             y_pred_stck = stacking_model.predict(X_test_stck)
             y_pred_proba_stck = stacking_model.predict_proba(X_test_stck)
 
-            # analysis_results = analyze_stacking_model(
-            #     model=stacking_model,
-            #     X_test=X_test_stck,
-            #     y_test=y_true_stck,
-            #     y_pred=y_pred_stck,
-            #     y_pred_proba=y_pred_proba_stck,
-            #     output_dir=run_folder / "explainability"
-            # )
-            #
-            # logging.info(f"Model analysis completed. Results saved in {run_folder}/explainability/")
-
-            if importance_tracker is not None:
+            if output_manager.importance_tracker is not None:
                 logging.info(f"Recording importance scores for run {run + 1}")
                 try:
                     importance_scores = permutation_importance(
@@ -374,7 +274,7 @@ def main(cfg: DictConfig):
                         n_repeats=10, random_state=seed
                     ).importances_mean
 
-                    importance_tracker.add_run(
+                    output_manager.importance_tracker.add_run(
                         run_number=run + 1,
                         importance_scores=importance_scores,
                         task_names=X_test_stck.columns
@@ -389,6 +289,7 @@ def main(cfg: DictConfig):
             filename_stck = run_folder / f"stacking_{cfg.experiment.stacking_model}_metrics_{run + 1}.csv"
             utils.save_metrics_to_csv(stck_metrics, filename_stck, run_number=run + 1, verbose=verbose)
             logging.info(f"Stacking metrics: \n {stck_metrics}") if verbose else None
+
         elif cfg.experiment.stacking_method == 'MajorityVote':
             y_true_test = stacking_test_data[cfg.data.target]
             stacking_test_data.drop(cfg.data.target, axis=1, inplace=True)
@@ -401,6 +302,7 @@ def main(cfg: DictConfig):
             filename_mv = run_folder / f"majority_vote_metrics_{run + 1}.csv"
             utils.save_metrics_to_csv(mv_metrics, filename_mv, run_number=run + 1, verbose=verbose)
             logging.info(f"Majority Vote, using first level predictions,metrics: \n {mv_metrics}") if verbose else None
+
         elif cfg.experiment.stacking_method == 'WeightedMajorityVote':
             y_true_test = stacking_test_data[cfg.data.target]
             stacking_test_data.drop(cfg.data.target, axis=1, inplace=True)
@@ -414,43 +316,19 @@ def main(cfg: DictConfig):
             utils.save_metrics_to_csv(wmv_metrics, filename_wmv, run_number=run + 1, verbose=verbose)
             logging.info(f"Weighted Majority Vote, using first level predictions, "
                          f"metrics: \n {wmv_metrics}") if verbose else None
+
         seed += 1
 
     # Generate final importance analysis if tracker was used
-    if importance_tracker is not None:
-        logging.info("Generating final importance analysis")
-        try:
-            importance_tracker.generate_final_analysis()
-            logging.info(
-                f"Feature importance analysis completed and saved in {root_output_folder}/feature_importance_analysis")
-        except Exception as e:
-            logging.error(f"Error generating final analysis: {str(e)}")
-
-    if bayesian_importance_tracker is not None:
-        logging.info("Generating final Bayesian Network importance analysis")
-        try:
-            bayesian_importance_tracker.generate_final_analysis(target_node=cfg.data.target)
-            logging.info(
-                f"Bayesian Network importance analysis completed and saved in "
-                f"{root_output_folder}/bayesian_importance_analysis"
-            )
-        except Exception as e:
-            logging.error(f"Error generating final Bayesian analysis: {str(e)}")
-
-    # if bayesian_importance_tracker is not None:
-    #     try:
-    #         bayesian_importance_tracker.generate_final_analysis()
-    #         logging.info("Bayesian Network importance analysis completed")
-    #     except Exception as e:
-    #         logging.error(f"Error generating Bayesian importance analysis: {str(e)}")
+    output_manager.generate_final_analysis(target_node=cfg.data.target)
 
     # Calculate average metrics across all runs
-    average_metrics = utils.calculate_average_metrics(root_output_folder)
+    average_metrics = utils.calculate_average_metrics(root_folder)
 
     if cfg.experiment.stacking_method == 'Bayesian':
-        df_occurrences = utils.calculate_markov_blanket_occurrences(root_output_folder, verbose)
+        df_occurrences = utils.calculate_markov_blanket_occurrences(root_folder, verbose)
         if df_occurrences is not None:
-            utils.save_markov_blanket_occurrences_to_csv(df_occurrences, root_output_folder)
+            utils.save_markov_blanket_occurrences_to_csv(df_occurrences, root_folder)
 
     if average_metrics:
         logging.info("Average metrics across all runs:") if debug else None
@@ -460,7 +338,7 @@ def main(cfg: DictConfig):
                 logging.info(f"  {metric}: {value:.5f}") if debug else None
 
         # Save average metrics to a CSV file
-        utils.save_average_metrics_to_csv(average_metrics, root_output_folder)
+        utils.save_average_metrics_to_csv(average_metrics, root_folder)
     else:
         logging.warning("No metrics files found or processed.")
 
@@ -478,7 +356,7 @@ def main(cfg: DictConfig):
     logging.info(f"Elapsed time: {formatted_time} seconds")
 
     # save the time taken to run the experiment
-    time_file = root_output_folder / "Execution_time.txt"
+    time_file = root_folder / "Execution_time.txt"
     with open(time_file, 'w') as f:
         f.write(f"Elapsed time: {formatted_time} seconds")
 
