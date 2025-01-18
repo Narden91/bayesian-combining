@@ -14,6 +14,7 @@ from pgmpy.estimators import (
 from pgmpy.models import BayesianNetwork
 from pgmpy.inference import VariableElimination
 from pgmpy.metrics import log_likelihood_score
+from sklearn.metrics import mutual_info_score
 from tqdm import tqdm
 from .GES import FastGESEstimator
 
@@ -126,6 +127,20 @@ def _ensure_target_node(model: BayesianNetwork, target: str, data: pd.DataFrame)
     return model
 
 
+def optimize_dataset_for_pc(df: pd.DataFrame, target: str) -> pd.DataFrame:
+    """
+    Optimize dataset before PC algorithm application.
+    """
+    # Create a copy to avoid modifying the original
+    df = df.copy()
+
+    # Convert numeric columns to float32 for faster computation
+    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    df[numeric_cols] = df[numeric_cols].astype('float32')
+
+    return df
+
+
 def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
                      df_predictions: pd.DataFrame, df_predictions_proba: pd.DataFrame,
                      df_test: pd.DataFrame, importance_tracker=None) -> Tuple:
@@ -146,6 +161,9 @@ def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
     """
     try:
         # Initialize structure learner with proper configuration
+        if cfg.bayesian_net.algorithm == 'PC':
+            df_predictions = optimize_dataset_for_pc(df_predictions, cfg.data.target)
+
         bn_model = _initialize_structure_learner(cfg, df_predictions)
         logging.info(f"Initialized {cfg.bayesian_net.algorithm} structure learner")
 
@@ -165,9 +183,17 @@ def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
             }
             best_model_stck = bn_model.estimate(**estimate_params)
 
-            # Ensure target node is present with meaningful connections
+            # Create initial model from PC results
             model = BayesianNetwork(best_model_stck.edges())
-            model = _ensure_target_node(model, cfg.data.target, df_predictions)
+
+            # Add target node if missing and connect it properly
+            if cfg.data.target not in model.nodes():
+                model = _ensure_target_node(model, cfg.data.target, df_predictions)
+                logging.info(f"Added target node {cfg.data.target} to the network")
+
+            # Verify model is still a DAG after adding target
+            if not isinstance(model, BayesianNetwork):
+                raise ValueError("Invalid model structure after adding target node")
 
         else:
             # Other algorithms (HillClimb, MMHC, etc.)
@@ -181,12 +207,13 @@ def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
         elapsed_time = time.time() - start_time
         logging.info(f"Structure learning completed in {elapsed_time:.2f} seconds")
 
-        # Create and fit Bayesian Network
-        model = BayesianNetwork(best_model_stck.edges())
-
         if cfg.bayesian_net.prior_type == 'dirichlet':
             logging.info("Using K2 prior for parameter estimation")
             cfg.bayesian_net.prior_type = 'K2'
+
+        # Validate and fit model
+        if cfg.data.target not in model.nodes():
+            raise ValueError(f"Target node {cfg.data.target} missing from network")
 
         model.fit(
             df_predictions,
@@ -194,10 +221,6 @@ def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
             prior_type=cfg.bayesian_net.prior_type
         )
         logging.info("Network parameters estimated successfully")
-
-        # Validate target node presence
-        if cfg.data.target not in model.nodes():
-            raise ValueError(f"Target node {cfg.data.target} missing from network")
 
         # Get Markov blanket
         label_markov_blanket = model.get_markov_blanket(cfg.data.target)
