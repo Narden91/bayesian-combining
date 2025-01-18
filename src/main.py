@@ -1,6 +1,7 @@
 import csv
 import os
 import random
+import shutil
 import time
 import hydra
 import numpy as np
@@ -78,10 +79,8 @@ def main(cfg: DictConfig):
         logging.error(f"Unexpected error in build_data_paths: {e}")
 
     logging.info(f"Data paths: {data_paths}") if verbose else None
-    # Load the CSV files
-    # file_list = utils.load_csv_file(data_paths[0], cfg.data.extension)
-    # file_list_comb = utils.load_csv_file(data_paths[1], cfg.data.extension) if len(data_paths) > 1 else None
 
+    # Load the CSV files
     file_lists = [utils.load_csv_file(folder_path, cfg.data.extension) for folder_path in data_paths]
 
     sample_df = pd.read_csv(file_lists[0][0], sep=cfg.data.separator)
@@ -110,7 +109,6 @@ def main(cfg: DictConfig):
     if len(output_folders.keys()) == 1:
         root_output_folder = list(output_folders.values())[0]
         logging.info(f"Output folder find: {root_output_folder}") if verbose else None
-
     elif len(output_folders.keys()) > 1:
         if "combined" in output_folders:
             root_output_folder = output_folders["combined"]
@@ -130,19 +128,13 @@ def main(cfg: DictConfig):
                 except Exception as e:
                     logging.error(f"Error setting up importance tracking: {str(e)}")
             elif cfg.experiment.stacking_method == 'Bayesian':
-                # importance_analysis_dir = root_output_folder / "bayesian_importance_analysis"
-                # try:
-                #     os.makedirs(importance_analysis_dir, exist_ok=True)
-                #     logging.info(f"Created directory: {importance_analysis_dir}")
-                #
-                #     bayesian_importance_tracker = BayesianImportanceTracker(
-                #         importance_analysis_dir,
-                #         num_runs,
-                #         n_permutations=10
-                #     )
-                #     logging.info("Successfully initialized Bayesian importance tracker")
-                # except Exception as e:
-                #     logging.error(f"Error setting up Bayesian importance tracking: {str(e)}")
+                # Rename the bayesian folder name based on the algorithm and score metric
+                if os.path.exists(root_output_folder):
+                    shutil.rmtree(root_output_folder)
+
+                root_output_folder = root_output_folder.with_name(
+                    f"{root_output_folder.name}_{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.score_metric}"
+                )
                 importance_analysis_dir = root_output_folder / "bayesian_importance_analysis"
                 try:
                     os.makedirs(importance_analysis_dir, exist_ok=True)
@@ -166,6 +158,7 @@ def main(cfg: DictConfig):
     for run in range(num_runs):
         run_folder = root_output_folder / f"run_{run + 1}"
         os.makedirs(run_folder) if not run_folder.exists() else None
+
         seed = global_seed + run
         logging.info(f"-------------------Run {run + 1} | Seed: {seed}-------------------")
         task_columns = [f'Task_{i + 1}' for i in range(num_tasks)]

@@ -7,18 +7,22 @@ import numpy as np
 import pandas as pd
 from pgmpy.estimators import (
     HillClimbSearch,
-    # GES,
     MmhcEstimator,
-    # ExpertEstimator,
+    PC,
+    TreeSearch,
+    ExhaustiveSearch,
     BicScore,
     K2Score,
     BDeuScore,
-    BDsScore, BayesianEstimator
+    BDsScore,
+    BayesianEstimator
 )
 from pgmpy.models import BayesianNetwork
 from pgmpy.inference import VariableElimination
 from pgmpy.metrics import log_likelihood_score, structure_score
+from sklearn.metrics import mutual_info_score
 from tqdm import tqdm
+
 
 def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions: pd.DataFrame,
                      df_predictions_proba: pd.DataFrame, df_test: pd.DataFrame,
@@ -42,6 +46,8 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
     algorithm_mapping = {
         'HillClimb': HillClimbSearch,
         'MMHC': MmhcEstimator,
+        'PC': PC,
+        'Tree': TreeSearch,
     }
 
     score_mapping = {
@@ -54,52 +60,33 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
     if cfg.bayesian_net.algorithm not in algorithm_mapping:
         raise ValueError(f"Invalid algorithm: {cfg.bayesian_net.algorithm}")
 
-    # Initialize base scoring method
+        # Initialize base scoring method
     score_metric = score_mapping.get(cfg.bayesian_net.score_metric, BicScore)
     scoring_method = score_metric(df_predictions)
 
-    # Initialize structure learner
-    bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions)
-    logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
+    init_params = {}
+    estimate_params = {}
 
-    # Set algorithm-specific parameters
-    if cfg.bayesian_net.algorithm == 'HillClimb':
+    if cfg.bayesian_net.algorithm == 'PC':
+        estimate_params = {
+            'ci_test': cfg.bayesian_net.ci_test,
+            'significance_level': cfg.bayesian_net.significance_level
+        }
+    elif cfg.bayesian_net.algorithm == 'HillClimb':
         estimate_params = {
             'scoring_method': scoring_method,
             'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
-            'black_list': cfg.bayesian_net.black_list if hasattr(cfg.bayesian_net, 'black_list') else None,
-            'white_list': cfg.bayesian_net.white_list if hasattr(cfg.bayesian_net, 'white_list') else None,
-            'fixed_edges': cfg.bayesian_net.fixed_edges if hasattr(cfg.bayesian_net, 'fixed_edges') else None,
         }
+    # elif cfg.bayesian_net.algorithm == 'MMHC':
+    #     estimate_params = {
+    #         'scoring_method': scoring_method,
+    #         'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
+    #         'significance_level': cfg.bayesian_net.significance_level
+    #     }
 
-    elif cfg.bayesian_net.algorithm == 'GES':
-        estimate_params = {
-            'score': scoring_method,
-            'maxiter': cfg.bayesian_net.max_iter if hasattr(cfg.bayesian_net, 'max_iter') else 1000,
-            'phase': cfg.bayesian_net.phase if hasattr(cfg.bayesian_net, 'phase') else None,
-            'epsilon': cfg.bayesian_net.epsilon if hasattr(cfg.bayesian_net, 'epsilon') else 1e-4
-        }
-
-    elif cfg.bayesian_net.algorithm == 'MMHC':
-        estimate_params = {
-            'init_graph': cfg.bayesian_net.init_graph if hasattr(cfg.bayesian_net, 'init_graph') else None,
-            'significance_level': cfg.bayesian_net.significance_level,
-            'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
-            'score_function': scoring_method,
-            'max_iter': cfg.bayesian_net.max_iter if hasattr(cfg.bayesian_net, 'max_iter') else 1000,
-            'epsilon': cfg.bayesian_net.epsilon if hasattr(cfg.bayesian_net, 'epsilon') else 1e-4
-        }
-
-    elif cfg.bayesian_net.algorithm == 'Expert':
-        estimate_params = {
-            'tabu_length': cfg.bayesian_net.tabu_length if hasattr(cfg.bayesian_net, 'tabu_length') else 100,
-            'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
-            'black_list': cfg.bayesian_net.black_list if hasattr(cfg.bayesian_net, 'black_list') else None,
-            'white_list': cfg.bayesian_net.white_list if hasattr(cfg.bayesian_net, 'white_list') else None,
-            'fixed_edges': cfg.bayesian_net.fixed_edges if hasattr(cfg.bayesian_net, 'fixed_edges') else None,
-            'init_edges': cfg.bayesian_net.init_edges if hasattr(cfg.bayesian_net, 'init_edges') else None,
-            'score_function': scoring_method
-        }
+    # Initialize structure learner with appropriate parameters
+    bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions, **init_params)
+    logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
 
     # Clean None values from parameters
     estimate_params = {k: v for k, v in estimate_params.items() if v is not None}
@@ -287,7 +274,6 @@ def analyze_network_structure(model, cfg):
         max_edges = len(model.nodes()) * (len(model.nodes()) - 1) / 2
         density = len(model.edges()) / max_edges
         logging.info(f"Network density: {density:.4f}")
-
 
 # import logging
 # import random

@@ -37,6 +37,18 @@ def get_output_folder(output_paths: List[Path], analysis_type: str, cfg: DictCon
             raise ValueError(f"Invalid stacking method: {cfg.experiment.stacking_method}")
         return path
 
+    # def add_model_and_stacking(path: Path) -> Path:
+    #     path = path / f"{cfg.model.name}"
+    #     if cfg.experiment.stacking_method == 'Classification':
+    #         path = path / f"{cfg.experiment.stacking_model}_stacking"
+    #     elif cfg.experiment.stacking_method in ['MajorityVote', 'WeightedMajorityVote']:
+    #         path = path / f"{cfg.experiment.stacking_method}"
+    #     elif cfg.experiment.stacking_method == 'Bayesian':
+    #         path = path / f"{cfg.experiment.stacking_method}_{cfg.bayesian_net.algorithm}_{cfg.bayesian_net.prior_type}"
+    #     else:
+    #         raise ValueError(f"Invalid stacking method: {cfg.experiment.stacking_method}")
+    #     return path
+
     if analysis_type == "Combined":
         # Create a folder name that combines all dataset names
         datasets = "_".join(path.name for path in output_paths)
