@@ -1,32 +1,134 @@
 import logging
-import random
 import time
 from pathlib import Path
+from typing import Dict, Optional, Tuple
+
 import graphviz
 import numpy as np
 import pandas as pd
 from pgmpy.estimators import (
-    HillClimbSearch,
-    MmhcEstimator,
-    PC,
-    TreeSearch,
-    ExhaustiveSearch,
-    BicScore,
-    K2Score,
-    BDeuScore,
-    BDsScore,
-    BayesianEstimator, AICScore
+    HillClimbSearch, MmhcEstimator, PC, TreeSearch,
+    BicScore, K2Score, BDeuScore, BDsScore, AICScore,
+    BayesianEstimator
 )
 from pgmpy.models import BayesianNetwork
 from pgmpy.inference import VariableElimination
-from pgmpy.metrics import log_likelihood_score, structure_score
-from sklearn.metrics import mutual_info_score
+from pgmpy.metrics import log_likelihood_score
 from tqdm import tqdm
+from .GES import FastGESEstimator
 
 
-def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions: pd.DataFrame,
-                     df_predictions_proba: pd.DataFrame, df_test: pd.DataFrame,
-                     importance_tracker=None) -> tuple:
+def _initialize_structure_learner(cfg: Dict, data: pd.DataFrame) -> object:
+    """
+    Initialize the appropriate structure learning algorithm with proper configuration.
+
+    Args:
+        cfg: Configuration dictionary
+        data: Training data
+
+    Returns:
+        Initialized structure learner
+    """
+    algorithm_mapping = {
+        'HillClimb': HillClimbSearch,
+        'MMHC': MmhcEstimator,
+        'PC': PC,
+        'Tree': TreeSearch,
+        'GES': FastGESEstimator
+    }
+
+    if cfg.bayesian_net.algorithm not in algorithm_mapping:
+        raise ValueError(f"Invalid algorithm: {cfg.bayesian_net.algorithm}")
+
+    if cfg.bayesian_net.algorithm == 'GES':
+        return FastGESEstimator(
+            data=data,
+            n_jobs=cfg.bayesian_net.get('n_jobs', -1),
+            cache_size=cfg.bayesian_net.get('cache_size', 1000),
+            early_stopping_steps=cfg.bayesian_net.get('early_stopping_steps', 5),
+            score_delta_threshold=cfg.bayesian_net.get('score_delta_threshold', 1e-4),
+            min_improvement_ratio=cfg.bayesian_net.get('min_improvement_ratio', 0.001)
+        )
+    elif cfg.bayesian_net.algorithm == 'PC':
+        return PC(data)
+    else:
+        return algorithm_mapping[cfg.bayesian_net.algorithm](data)
+
+
+def _setup_scoring_method(cfg: Dict, data: pd.DataFrame) -> Optional[object]:
+    """
+    Set up the appropriate scoring method based on configuration.
+
+    Args:
+        cfg: Configuration dictionary
+        data: Training data
+
+    Returns:
+        Initialized scoring method or None for PC algorithm
+    """
+    if cfg.bayesian_net.algorithm == 'PC':
+        return None
+
+    score_mapping = {
+        'bic': BicScore,
+        'k2': K2Score,
+        'bdeu': BDeuScore,
+        'bds': BDsScore,
+        'aic': AICScore
+    }
+
+    score_metric = score_mapping.get(cfg.bayesian_net.score_metric)
+    if score_metric is None:
+        logging.warning(f"Invalid score metric: {cfg.bayesian_net.score_metric}, using BicScore")
+        score_metric = BicScore
+
+    return score_metric(data)
+
+
+def _ensure_target_node(model: BayesianNetwork, target: str, data: pd.DataFrame) -> BayesianNetwork:
+    """
+    Ensure target node is present in the network and has meaningful connections.
+
+    Args:
+        model: BayesianNetwork model
+        target: Target variable name
+        data: Training data
+
+    Returns:
+        Updated BayesianNetwork with target node
+    """
+    if target not in model.nodes():
+        # Add target node if missing
+        model.add_node(target)
+        logging.info(f"Added missing target node {target}")
+
+        # Calculate mutual information between target and other variables
+        target_data = data[target]
+        mutual_info = {}
+        for node in model.nodes():
+            if node != target:
+                mi_score = mutual_info_score(target_data, data[node])
+                mutual_info[node] = mi_score
+
+        # Connect target to nodes with highest mutual information
+        if mutual_info:
+            # Get top 3 most informative nodes or all if less than 3
+            top_nodes = sorted(mutual_info.items(), key=lambda x: x[1], reverse=True)
+            num_connections = min(3, len(top_nodes))
+
+            for node, score in top_nodes[:num_connections]:
+                try:
+                    model.add_edge(target, node)
+                    logging.info(f"Added edge from {target} to {node} (MI: {score:.4f})")
+                except Exception as e:
+                    logging.warning(f"Could not add edge {target}->{node}: {str(e)}")
+
+    return model
+
+
+def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
+                     df_predictions: pd.DataFrame, df_predictions_proba: pd.DataFrame,
+                     df_test: pd.DataFrame, importance_tracker=None) -> Tuple:
     """
     Build a Bayesian Network using the predictions from the stacking models.
 
@@ -37,67 +139,53 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
         df_predictions: DataFrame with predictions
         df_predictions_proba: DataFrame with prediction probabilities
         df_test: Test data DataFrame
-        importance_tracker: BayesianImportanceTracker instance for tracking importance metrics
+        importance_tracker: Optional BayesianImportanceTracker instance
 
     Returns:
-        tuple: (selected_columns, results_df_train, results_df_test, bic_score,
-               log_likelihood, log_likelihood_test)
+        Tuple containing selected columns, results DataFrames, and metrics
     """
-    algorithm_mapping = {
-        'HillClimb': HillClimbSearch,
-        'MMHC': MmhcEstimator,
-        'PC': PC,
-        'Tree': TreeSearch,
-    }
-
-    score_mapping = {
-        'bic': BicScore,
-        'k2': K2Score,
-        'bdeu': BDeuScore,
-        'bds': BDsScore,
-        'aic': AICScore
-    }
-
-    if cfg.bayesian_net.algorithm not in algorithm_mapping:
-        raise ValueError(f"Invalid algorithm: {cfg.bayesian_net.algorithm}")
-
-        # Initialize base scoring method
-    score_metric = score_mapping.get(cfg.bayesian_net.score_metric, BicScore)
-    scoring_method = score_metric(df_predictions)
-
-    # Initialize structure learner
-    bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions)
-    logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
-
-    estimate_params = {
-        'scoring_method': scoring_method,
-        'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
-    }
-
     try:
-        best_model_stck = bn_model.estimate(**estimate_params)
-        logging.info(f"Successfully estimated network structure")
-    except Exception as e:
-        logging.error(f"Error during structure learning: {str(e)}")
-        raise
+        # Initialize structure learner with proper configuration
+        bn_model = _initialize_structure_learner(cfg, df_predictions)
+        logging.info(f"Initialized {cfg.bayesian_net.algorithm} structure learner")
 
-    nodes = set(sum(best_model_stck.edges(), ()))
-    logging.info(f"Nodes in the Bayesian Network: {nodes}")
+        # Setup scoring method
+        scoring_method = _setup_scoring_method(cfg, df_predictions)
 
-    # Handle target node
-    if cfg.data.target not in nodes:
-        logging.warning(f"Target node {cfg.data.target} not found in the learned structure. Adding it manually.")
-        best_model_stck.add_node(cfg.data.target)
-        if nodes:
-            example_node = next(iter(nodes))
-            best_model_stck.add_edge(cfg.data.target, example_node)
+        # Estimate network structure
+        start_time = time.time()
 
-    model = BayesianNetwork(best_model_stck.edges())
+        if cfg.bayesian_net.algorithm == 'PC':
+            # Set up PC algorithm specific parameters
+            estimate_params = {
+                'variant': cfg.bayesian_net.get('variant', 'stable'),
+                'alpha': cfg.bayesian_net.significance_level,
+                'max_cond_vars': cfg.bayesian_net.get('max_cond_vars'),
+                'show_progress': cfg.bayesian_net.get('show_progress', True)
+            }
+            best_model_stck = bn_model.estimate(**estimate_params)
 
-    try:
+            # Ensure target node is present with meaningful connections
+            model = BayesianNetwork(best_model_stck.edges())
+            model = _ensure_target_node(model, cfg.data.target, df_predictions)
+
+        else:
+            # Other algorithms (HillClimb, MMHC, etc.)
+            estimate_params = {
+                'scoring_method': scoring_method,
+                'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None
+            }
+            best_model_stck = bn_model.estimate(**estimate_params)
+            model = BayesianNetwork(best_model_stck.edges())
+
+        elapsed_time = time.time() - start_time
+        logging.info(f"Structure learning completed in {elapsed_time:.2f} seconds")
+
+        # Create and fit Bayesian Network
+        model = BayesianNetwork(best_model_stck.edges())
+
         if cfg.bayesian_net.prior_type == 'dirichlet':
-            # Switch to K2 prior which doesn't require explicit pseudo_counts
-            logging.info("Switching to K2 prior as it's more suitable for this network structure")
+            logging.info("Using K2 prior for parameter estimation")
             cfg.bayesian_net.prior_type = 'K2'
 
         model.fit(
@@ -105,94 +193,89 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
             estimator=BayesianEstimator,
             prior_type=cfg.bayesian_net.prior_type
         )
-        logging.info("Successfully fitted network parameters")
+        logging.info("Network parameters estimated successfully")
+
+        # Validate target node presence
+        if cfg.data.target not in model.nodes():
+            raise ValueError(f"Target node {cfg.data.target} missing from network")
+
+        # Get Markov blanket
+        label_markov_blanket = model.get_markov_blanket(cfg.data.target)
+        logging.info(f"Markov blanket size: {len(label_markov_blanket)}")
+
+        # Calculate network scores
+        bic_score = BicScore(df_predictions).score(model)
+        log_likelihood = log_likelihood_score(model, df_predictions[list(model.nodes())])
+        log_likelihood_test = log_likelihood_score(model, df_test[list(model.nodes())])
+
+        # Update importance tracker if provided
+        if importance_tracker is not None:
+            importance_tracker.add_run(
+                run_number=run_number,
+                model=model,
+                target_node=cfg.data.target,
+                log_likelihood=log_likelihood
+            )
+
+        # Create visualizations and analysis
+        create_bn_visualization(model, cfg.data.target, run_folder, run_number)
+        analyze_network_structure(model, cfg)
+
+        # Prepare selected columns and perform inference
+        selected_columns = list(label_markov_blanket) + [cfg.data.target]
+        selected_tasks_df = df_predictions[selected_columns]
+
+        inference = VariableElimination(model)
+
+        # Training data predictions
+        predictions_train, probabilities_class_0_train, probabilities_class_1_train = perform_inference(
+            inference, selected_tasks_df, cfg.data.target, label_markov_blanket
+        )
+
+        # Test data predictions
+        test_columns = [col for col in selected_columns if col != cfg.data.target]
+        test_tasks_df = df_test[test_columns]
+        predictions_test, probabilities_class_0_test, probabilities_class_1_test = perform_inference(
+            inference, test_tasks_df, cfg.data.target, label_markov_blanket
+        )
+
+        # Create results DataFrames
+        results_df_train = pd.DataFrame({
+            cfg.data.target: predictions_train,
+            f"{cfg.data.target}_proba_-1": probabilities_class_0_train,
+            f"{cfg.data.target}_proba_1": probabilities_class_1_train
+        })
+        results_df_train[cfg.data.target] = results_df_train[cfg.data.target].map({0: -1, 1: 1})
+
+        results_df_test = pd.DataFrame({
+            cfg.data.target: predictions_test,
+            f"{cfg.data.target}_proba_-1": probabilities_class_0_test,
+            f"{cfg.data.target}_proba_1": probabilities_class_1_test
+        })
+        results_df_test[cfg.data.target] = results_df_test[cfg.data.target].map({0: -1, 1: 1})
+
+        return (selected_columns, results_df_train, results_df_test,
+                bic_score, log_likelihood, log_likelihood_test)
+
     except Exception as e:
-        logging.error(f"Error during parameter estimation: {str(e)}")
+        logging.error(f"Error in bayesian_network: {str(e)}")
         raise
 
-    if cfg.data.target not in model.nodes():
-        logging.error(f"The node {cfg.data.target} is still not in the fitted Bayesian Network.")
-        raise ValueError(f"The node {cfg.data.target} is missing from the Bayesian Network after fitting.")
 
-    try:
-        label_markov_blanket = model.get_markov_blanket(cfg.data.target)
-        logging.info(f"Markov Blanket for {cfg.data.target}: {label_markov_blanket}")
-    except Exception as e:
-        logging.error(f"Error retrieving Markov Blanket for {cfg.data.target}: {str(e)}")
+def perform_inference(inference, df: pd.DataFrame, target: str,
+                      markov_blanket: set) -> Tuple[list, list, list]:
+    """
+    Perform inference on the Bayesian network.
 
-    # Calculate various scores
-    try:
-        bic = BicScore(df_predictions)
-        bic_score = bic.score(model)
-        logging.info(f"BIC Score: {bic_score}")
-    except Exception as e:
-        logging.error(f"Error calculating BIC score: {str(e)}")
-        bic_score = 0
+    Args:
+        inference: VariableElimination object
+        df: Data to perform inference on
+        target: Target variable name
+        markov_blanket: Set of nodes in Markov blanket
 
-    try:
-        df_predictions_reordered = df_predictions[list(model.nodes())]
-        log_likelihood = log_likelihood_score(model, df_predictions_reordered)
-        logging.info(f"Log Likelihood Score: {log_likelihood}")
-    except Exception as e:
-        logging.error(f"Error calculating log likelihood: {str(e)}")
-        log_likelihood = 0
-
-    try:
-        df_test_reordered = df_test[list(model.nodes())]
-        log_likelihood_test = log_likelihood_score(model, df_test_reordered)
-        logging.info(f"Log Likelihood Score (Test): {log_likelihood_test}")
-    except Exception as e:
-        logging.error(f"Error calculating log likelihood on test data: {str(e)}")
-        log_likelihood_test = 0
-
-    if importance_tracker is not None:
-        importance_tracker.add_run(
-            run_number=run_number,
-            model=model,
-            target_node=cfg.data.target,
-            log_likelihood=log_likelihood)
-
-    # if importance_tracker is not None:
-    #     importance_tracker.add_run(run_number, model, df_predictions, cfg.data.target)
-
-    create_bn_visualization(model, cfg.data.target, run_folder, run_number)
-    analyze_network_structure(model, cfg)
-
-    label_markov_blanket = model.get_markov_blanket(cfg.data.target)
-    selected_columns = list(label_markov_blanket) + [cfg.data.target]
-    selected_tasks_df = df_predictions[selected_columns]
-
-    logging.info("Performing inference...")
-    inference = VariableElimination(model)
-
-    predictions_train, probabilities_class_0_train, probabilities_class_1_train = perform_inference(
-        inference, selected_tasks_df, cfg.data.target, label_markov_blanket
-    )
-
-    results_df_train = pd.DataFrame({
-        cfg.data.target: predictions_train,
-        f"{cfg.data.target}_proba_-1": probabilities_class_0_train,
-        f"{cfg.data.target}_proba_1": probabilities_class_1_train
-    })
-    results_df_train[cfg.data.target] = results_df_train[cfg.data.target].map({0: -1, 1: 1})
-
-    test_columns = [col for col in selected_columns if col != cfg.data.target]
-    test_tasks_df = df_test[test_columns]
-    predictions_test, probabilities_class_0_test, probabilities_class_1_test = perform_inference(
-        inference, test_tasks_df, cfg.data.target, label_markov_blanket
-    )
-
-    results_df_test = pd.DataFrame({
-        cfg.data.target: predictions_test,
-        f"{cfg.data.target}_proba_-1": probabilities_class_0_test,
-        f"{cfg.data.target}_proba_1": probabilities_class_1_test
-    })
-    results_df_test[cfg.data.target] = results_df_test[cfg.data.target].map({0: -1, 1: 1})
-
-    return selected_columns, results_df_train, results_df_test, bic_score, log_likelihood, log_likelihood_test
-
-
-def perform_inference(inference, df, target, markov_blanket):
+    Returns:
+        Tuple of predictions and class probabilities
+    """
     predictions = []
     probabilities_class_0 = []
     probabilities_class_1 = []
@@ -202,6 +285,7 @@ def perform_inference(inference, df, target, markov_blanket):
         query_result = inference.query([target], evidence=evidence)
         probs = query_result.values
         prediction = np.argmax(probs)
+
         predictions.append(prediction)
         probabilities_class_0.append(probs[0])
         probabilities_class_1.append(probs[1])
@@ -209,7 +293,9 @@ def perform_inference(inference, df, target, markov_blanket):
     return predictions, probabilities_class_0, probabilities_class_1
 
 
-def create_bn_visualization(model, target, run_folder, run_number, max_retries=5, base_delay=0.1):
+def create_bn_visualization(model: BayesianNetwork, target: str,
+                            run_folder: str, run_number: int) -> None:
+    """Create and save visualization of the Bayesian network."""
     dot = graphviz.Digraph(comment=f'Bayesian Network {run_number + 1}')
     dot.attr(rankdir='LR')
 
@@ -220,320 +306,41 @@ def create_bn_visualization(model, target, run_folder, run_number, max_retries=5
     for edge in model.edges():
         dot.edge(edge[0], edge[1])
 
-    run_folder = Path(run_folder)
-    bn_path = run_folder / f"bayesian_network_{run_number + 1}"
-
-    for attempt in range(max_retries):
-        try:
-            dot_source = dot.source
-            dot_file = bn_path.with_suffix('.dot')
-            with open(dot_file, 'w') as f:
-                f.write(dot_source)
-            break
-        except Exception as e:
-            delay = base_delay * (attempt + 1) * (1 + random.random())
-            logging.warning(
-                f"Attempt {attempt + 1} to save BN visualization failed. Retrying in {delay:.2f} seconds. Error: {str(e)}")
-            time.sleep(delay)
-    else:
-        logging.error(
-            f"Failed to save Bayesian Network visualization after {max_retries} attempts. Continuing execution.")
+    try:
+        bn_path = Path(run_folder) / f"bayesian_network_{run_number + 1}"
+        dot_source = dot.source
+        with open(bn_path.with_suffix('.dot'), 'w') as f:
+            f.write(dot_source)
+    except Exception as e:
+        logging.error(f"Failed to save network visualization: {str(e)}")
 
 
-def analyze_network_structure(model, cfg):
-    if cfg.bayesian_net.verbose:
-        logging.info("\nNetwork Structure:")
-        for edge in model.edges():
-            logging.info(f"{edge[0]} -> {edge[1]}")
+def analyze_network_structure(model: BayesianNetwork, cfg: Dict) -> None:
+    """Analyze and log network structure details."""
+    if not cfg.bayesian_net.verbose:
+        return
 
-        logging.info("\nNode degrees:")
-        for node in model.nodes():
-            in_degree = len(model.get_parents(node))
-            out_degree = len(model.get_children(node))
-            logging.info(f"{node}: In-degree = {in_degree}, Out-degree = {out_degree}")
+    logging.info("\nNetwork Structure Analysis:")
 
-        logging.info("\nNetwork Statistics:")
-        logging.info(f"Number of nodes: {len(model.nodes())}")
-        logging.info(f"Number of edges: {len(model.edges())}")
+    # Edge analysis
+    logging.info("\nEdge Structure:")
+    for edge in model.edges():
+        logging.info(f"{edge[0]} -> {edge[1]}")
 
-        max_edges = len(model.nodes()) * (len(model.nodes()) - 1) / 2
-        density = len(model.edges()) / max_edges
-        logging.info(f"Network density: {density:.4f}")
+    # Node degree analysis
+    logging.info("\nNode Degrees:")
+    for node in model.nodes():
+        in_degree = len(model.get_parents(node))
+        out_degree = len(model.get_children(node))
+        logging.info(f"{node}: In-degree={in_degree}, Out-degree={out_degree}")
 
-# import logging
-# import random
-# import time
-# from pathlib import Path
-#
-# import graphviz
-# import numpy as np
-# import pandas as pd
-# from pgmpy.estimators import HillClimbSearch, ExhaustiveSearch, PC, TreeSearch, BayesianEstimator, BicScore, \
-#     K2Score, BDeuScore, BDsScore, AICScore
-#
-# from pgmpy.models import BayesianNetwork
-# from pgmpy.inference import VariableElimination
-# from pgmpy.metrics import log_likelihood_score, structure_score
-# from tqdm import tqdm
-#
-#
-# def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions: pd.DataFrame,
-#                      df_predictions_proba: pd.DataFrame, df_test: pd.DataFrame) -> (list, pd.DataFrame, pd.DataFrame):
-#     """
-#     Build a Bayesian Network using the predictions from the stacking models and perform classification on test data.
-#     Algorithm options: HillClimb, Exhaustive, PC, TreeSearch
-#     USE_PARENTS: True, False
-#     MAX_PARENTS: int
-#     Prior type: K2, BDeu
-#
-#     :param cfg: dict
-#     :param run_number: int
-#     :param run_folder: str
-#     :param df_predictions: pd.DataFrame
-#     :param df_predictions_proba: pd.DataFrame
-#     :param df_test: pd.DataFrame
-#     :return: list, pd.DataFrame, pd.DataFrame
-#     """
-#     # Build Bayesian Network
-#     # Mapping algorithms and initializing the selected algorithm
-#     algorithm_mapping = {
-#         'HillClimb': HillClimbSearch,
-#         'Exhaustive': ExhaustiveSearch,
-#         'PC': PC,
-#         'TreeSearch': TreeSearch
-#     }
-#
-#     # Ensure the selected algorithm is valid
-#     if cfg.bayesian_net.algorithm not in algorithm_mapping:
-#         raise ValueError(f"Invalid algorithm: {cfg.bayesian_net.algorithm}")
-#
-#     # Initialize the Bayesian Network search object with df_predictions
-#     bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions)
-#
-#     logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
-#
-#     # Estimate the network structure
-#     if cfg.bayesian_net.use_parents:
-#         logging.info(f"Using max_parents = {cfg.experiment.max_parents}")
-#         best_model_stck = bn_model.estimate(max_indegree=cfg.experiment.max_parents)
-#     else:
-#         logging.info("No max_parents constraint applied")
-#         best_model_stck = bn_model.estimate()
-#
-#     # Extract nodes from the learned structure
-#     nodes = set(sum(best_model_stck.edges(), ()))  # Flatten edges to get all nodes
-#     logging.info(f"Nodes in the Bayesian Network: {nodes}")
-#
-#     # Check if the target node is in the set of nodes
-#     if cfg.data.target not in nodes:
-#         logging.warning(f"Target node {cfg.data.target} not found in the learned structure. Adding it manually.")
-#
-#         # Add the node to the model and connect it minimally to ensure it's recognized
-#         best_model_stck.add_node(cfg.data.target)
-#         # Optional: Add a minimal edge to ensure the node is fully registered
-#         example_node = next(iter(nodes))  # Select any existing node
-#         best_model_stck.add_edge(cfg.data.target, example_node)  # Add a neutral connection
-#
-#     # Verify node addition in the graph
-#     if cfg.data.target not in best_model_stck.nodes():
-#         logging.error(f"Failed to add target node {cfg.data.target} to the Bayesian Network.")
-#     else:
-#         logging.info(f"Successfully added target node {cfg.data.target} to the Bayesian Network.")
-#
-#     # Initialize the Bayesian Network with the edges
-#     model = BayesianNetwork(best_model_stck.edges())
-#
-#     # Fit the model with the given data
-#     model.fit(df_predictions, estimator=BayesianEstimator, prior_type=cfg.bayesian_net.prior_type)
-#
-#     # Final check: ensure the node is in the fitted model
-#     if cfg.data.target not in model.nodes():
-#         logging.error(f"The node {cfg.data.target} is still not in the fitted Bayesian Network.")
-#         raise ValueError(f"The node {cfg.data.target} is missing from the Bayesian Network after fitting.")
-#     else:
-#         try:
-#             # Attempt to retrieve the Markov Blanket of the target node
-#             label_markov_blanket = model.get_markov_blanket(cfg.data.target)
-#             logging.info(f"Markov Blanket for {cfg.data.target}: {label_markov_blanket}")
-#         except Exception as e:
-#             logging.error(f"Error retrieving Markov Blanket for {cfg.data.target}: {str(e)}")
-#
-#     # Calculate BIC score
-#     try:
-#         bic = BicScore(df_predictions)
-#         bic_score = bic.score(model)
-#         logging.info(f"BIC Score: {bic_score}")
-#     except Exception as e:
-#         logging.error(f"Error calculating BIC score: {str(e)}")
-#         bic_score = 0
-#         logging.info(f"BIC Score set to: {bic_score}")
-#
-#     # Calculate log likelihood score on training data
-#     try:
-#         df_predictions_reordered = df_predictions[list(model.nodes())]
-#         log_likelihood = log_likelihood_score(model, df_predictions_reordered)
-#         logging.info(f"Log Likelihood Score: {log_likelihood}")
-#     except Exception as e:
-#         logging.error(f"Error calculating log likelihood: {str(e)}")
-#         log_likelihood = 0
-#         logging.info(f"Log Likelihood Score set to: {log_likelihood}")
-#
-#     # Calculate log likelihood score on test data
-#     try:
-#         df_test_reordered = df_test[list(model.nodes())]
-#         log_likelihood_test = log_likelihood_score(model, df_test_reordered)
-#         logging.info(f"Log Likelihood Score (Test): {log_likelihood_test}")
-#     except Exception as e:
-#         logging.error(f"Error calculating log likelihood on test data: {str(e)}")
-#         log_likelihood_test = 0
-#         logging.info(f"Log Likelihood Score (Test) set to: {log_likelihood_test}")
-#
-#     # Create and save Bayesian Network visualization
-#     create_bn_visualization(model, cfg.data.target, run_folder, run_number)
-#
-#     # Analyze and log network structure
-#     analyze_network_structure(model, cfg)
-#
-#     # Find Markov blanket for target
-#     label_markov_blanket = model.get_markov_blanket(cfg.data.target)
-#     logging.info(f"Markov Blanket for {cfg.data.target}: {label_markov_blanket}")
-#
-#     # Select columns based on Markov blanket
-#     selected_columns = list(label_markov_blanket) + [cfg.data.target]
-#     selected_tasks_df = df_predictions[selected_columns]
-#
-#     # Perform improved inference
-#     logging.info("Performing inference...")
-#     inference = VariableElimination(model)
-#
-#     # Make predictions using probabilistic inference on training data
-#     predictions_train, probabilities_class_0_train, probabilities_class_1_train = perform_inference(inference,
-#                                                                                                     selected_tasks_df,
-#                                                                                                     cfg.data.target,
-#                                                                                                     label_markov_blanket)
-#
-#     # Create DataFrame with predictions and probabilities for training data
-#     results_df_train = pd.DataFrame({
-#         cfg.data.target: predictions_train,
-#         f"{cfg.data.target}_proba_-1": probabilities_class_0_train,
-#         f"{cfg.data.target}_proba_1": probabilities_class_1_train
-#     })
-#
-#     # Map Label 0 to -1 for training data
-#     results_df_train[cfg.data.target] = results_df_train[cfg.data.target].map({0: -1, 1: 1})
-#
-#     # Perform inference on test data
-#     test_columns = [col for col in selected_columns if col != cfg.data.target]
-#     test_tasks_df = df_test[test_columns]
-#     predictions_test, probabilities_class_0_test, probabilities_class_1_test = perform_inference(inference,
-#                                                                                                  test_tasks_df,
-#                                                                                                  cfg.data.target,
-#                                                                                                  label_markov_blanket)
-#
-#     # Create DataFrame with predictions and probabilities for test data
-#     results_df_test = pd.DataFrame({
-#         cfg.data.target: predictions_test,
-#         f"{cfg.data.target}_proba_-1": probabilities_class_0_test,
-#         f"{cfg.data.target}_proba_1": probabilities_class_1_test
-#     })
-#
-#     # Map Label 0 to -1 for test data
-#     results_df_test[cfg.data.target] = results_df_test[cfg.data.target].map({0: -1, 1: 1})
-#
-#     # return selected_columns, results_df_train, results_df_test
-#     return selected_columns, results_df_train, results_df_test, bic_score, log_likelihood, log_likelihood_test
-#
-#
-# def perform_inference(inference, df, target, markov_blanket):
-#     predictions = []
-#     probabilities_class_0 = []
-#     probabilities_class_1 = []
-#
-#     for _, row in tqdm(df.iterrows(), total=len(df), desc="Inferring"):
-#         evidence = {col: row[col] for col in markov_blanket if col != target}
-#         query_result = inference.query([target], evidence=evidence)
-#
-#         # Get the probabilities for both classes
-#         probs = query_result.values
-#
-#         # Get the most probable class
-#         prediction = np.argmax(probs)
-#         predictions.append(prediction)
-#
-#         # Store probabilities for both classes
-#         probabilities_class_0.append(probs[0])
-#         probabilities_class_1.append(probs[1])
-#
-#     return predictions, probabilities_class_0, probabilities_class_1
-#
-#
-# def create_bn_visualization(model, target, run_folder, run_number, max_retries=5, base_delay=0.1):
-#     """
-#     Create and save a visualization of the Bayesian Network with manual file handling.
-#     Continues execution even if an error occurs.
-#
-#     :param model: The Bayesian Network model
-#     :param target: The target variable
-#     :param run_folder: The folder to save the visualization
-#     :param run_number: The run number
-#     :param max_retries: Maximum number of retry attempts
-#     :param base_delay: Base delay between retries (will be multiplied by attempt number)
-#     """
-#     dot = graphviz.Digraph(comment=f'Bayesian Network {run_number + 1}')
-#     dot.attr(rankdir='LR')
-#
-#     for node in model.nodes():
-#         shape = 'diamond' if node == target else 'ellipse'
-#         dot.node(node, node, shape=shape)
-#
-#     for edge in model.edges():
-#         dot.edge(edge[0], edge[1])
-#
-#     run_folder = Path(run_folder)
-#     # bn_path = run_folder / f"bayesian_network_{run_number + 1}_{uuid.uuid4().hex}"  # Ensure unique filename
-#     bn_path = run_folder / f"bayesian_network_{run_number + 1}"
-#
-#     for attempt in range(max_retries):
-#         try:
-#             # Generate DOT source
-#             dot_source = dot.source
-#
-#             # Save DOT file
-#             dot_file = bn_path.with_suffix('.dot')
-#             with open(dot_file, 'w') as f:
-#                 f.write(dot_source)
-#
-#             # # Convert DOT to PNG using command-line tool
-#             # png_file = bn_path.with_suffix('.png')
-#             # subprocess.run(['dot', '-Tpng', str(dot_file), '-o', str(png_file)], check=True)
-#             #
-#             # logging.info(f"Bayesian Network visualization saved successfully: {png_file}")
-#             break
-#         except Exception as e:
-#             delay = base_delay * (attempt + 1) * (1 + random.random())
-#             logging.warning(f"Attempt {attempt + 1} to save BN visualization failed. Retrying in {delay:.2f} seconds. Error: {str(e)}")
-#             time.sleep(delay)
-#     else:
-#         logging.error(f"Failed to save Bayesian Network visualization after {max_retries} attempts. Continuing execution.")
-#
-#
-# def analyze_network_structure(model, cfg):
-#     if cfg.bayesian_net.verbose:
-#         logging.info("\nNetwork Structure:")
-#         for edge in model.edges():
-#             logging.info(f"{edge[0]} -> {edge[1]}")
-#
-#         logging.info("\nNode degrees:")
-#         for node in model.nodes():
-#             in_degree = len(model.get_parents(node))
-#             out_degree = len(model.get_children(node))
-#             logging.info(f"{node}: In-degree = {in_degree}, Out-degree = {out_degree}")
-#
-#         logging.info("\nNetwork Statistics:")
-#         logging.info(f"Number of nodes: {len(model.nodes())}")
-#         logging.info(f"Number of edges: {len(model.edges())}")
-#
-#         # Calculate network density
-#         max_edges = len(model.nodes()) * (len(model.nodes()) - 1) / 2
-#         density = len(model.edges()) / max_edges
-#         logging.info(f"Network density: {density:.4f}")
+    # Network statistics
+    n_nodes = len(model.nodes())
+    n_edges = len(model.edges())
+    max_possible_edges = n_nodes * (n_nodes - 1) / 2
+    density = n_edges / max_possible_edges
+
+    logging.info("\nNetwork Statistics:")
+    logging.info(f"Nodes: {n_nodes}")
+    logging.info(f"Edges: {n_edges}")
+    logging.info(f"Network density: {density:.4f}")
