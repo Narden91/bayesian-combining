@@ -37,7 +37,7 @@ scaling:
   type: Robust
 
 model:
-  name: DecisionTree # RandomForest, SVC, DecisionTree, XGB
+  name: XGB # RandomForest, SVC, DecisionTree, XGB
 
 optuna:
   n_trials: 2
@@ -56,10 +56,10 @@ experiment:
 
 bayesian_net:
   algorithm: HillClimb  # HillClimb, MMHC, PC, Tree
-  score_metric: bic  # or k2, bdeu, bds
-  prior_type: K2  # or K2
+  score_metric: bic  # k2, bdeu, bds, bic, aic
+  prior_type: K2  # K2 or BDeu or dirichlet
   use_parents: true
-  max_parents: 3
+  max_parents: 3 # 5
   significance_level: 0.05  # for PC and MMHC
   ci_test: pearsonr  # for PC
   verbose: true

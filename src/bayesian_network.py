@@ -15,7 +15,7 @@ from pgmpy.estimators import (
     K2Score,
     BDeuScore,
     BDsScore,
-    BayesianEstimator
+    BayesianEstimator, AICScore
 )
 from pgmpy.models import BayesianNetwork
 from pgmpy.inference import VariableElimination
@@ -54,7 +54,8 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
         'bic': BicScore,
         'k2': K2Score,
         'bdeu': BDeuScore,
-        'bds': BDsScore
+        'bds': BDsScore,
+        'aic': AICScore
     }
 
     if cfg.bayesian_net.algorithm not in algorithm_mapping:
@@ -64,32 +65,14 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
     score_metric = score_mapping.get(cfg.bayesian_net.score_metric, BicScore)
     scoring_method = score_metric(df_predictions)
 
-    init_params = {}
-    estimate_params = {}
-
-    if cfg.bayesian_net.algorithm == 'PC':
-        estimate_params = {
-            'ci_test': cfg.bayesian_net.ci_test,
-            'significance_level': cfg.bayesian_net.significance_level
-        }
-    elif cfg.bayesian_net.algorithm == 'HillClimb':
-        estimate_params = {
-            'scoring_method': scoring_method,
-            'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
-        }
-    # elif cfg.bayesian_net.algorithm == 'MMHC':
-    #     estimate_params = {
-    #         'scoring_method': scoring_method,
-    #         'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
-    #         'significance_level': cfg.bayesian_net.significance_level
-    #     }
-
-    # Initialize structure learner with appropriate parameters
-    bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions, **init_params)
+    # Initialize structure learner
+    bn_model = algorithm_mapping[cfg.bayesian_net.algorithm](df_predictions)
     logging.info(f"Building Bayesian Network using {cfg.bayesian_net.algorithm} algorithm...")
 
-    # Clean None values from parameters
-    estimate_params = {k: v for k, v in estimate_params.items() if v is not None}
+    estimate_params = {
+        'scoring_method': scoring_method,
+        'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None,
+    }
 
     try:
         best_model_stck = bn_model.estimate(**estimate_params)
@@ -109,12 +92,14 @@ def bayesian_network(cfg: dict, run_number: int, run_folder: str, df_predictions
             example_node = next(iter(nodes))
             best_model_stck.add_edge(cfg.data.target, example_node)
 
-    if cfg.data.target not in best_model_stck.nodes():
-        raise ValueError(f"Failed to add target node {cfg.data.target} to the Bayesian Network.")
-
     model = BayesianNetwork(best_model_stck.edges())
 
     try:
+        if cfg.bayesian_net.prior_type == 'dirichlet':
+            # Switch to K2 prior which doesn't require explicit pseudo_counts
+            logging.info("Switching to K2 prior as it's more suitable for this network structure")
+            cfg.bayesian_net.prior_type = 'K2'
+
         model.fit(
             df_predictions,
             estimator=BayesianEstimator,

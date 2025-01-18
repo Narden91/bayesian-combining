@@ -134,6 +134,8 @@ def build_data_paths(cfg: DictConfig, data_parent_path: Union[str, Path],
         data_folder = data_parent_path / data_type / dataset
         output_folder = output_path / data_type / dataset
 
+        logging.info(f"Data folder: {data_folder}")
+
         if not data_folder.exists():
             raise ValueError(f"Data folder {data_folder} does not exist.")
 

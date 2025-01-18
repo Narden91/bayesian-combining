@@ -7,10 +7,10 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.calibration import CalibratedClassifierCV
-import preprocessing as prep
-import hyperparameters as hp
-import utils
-import classification as clf
+from . import preprocessing as prep
+from . import hyperparameters as hp
+from . import utils
+from . import classification as clf
 
 
 def process_tasks(file_list, cfg, seed, verbose, data_type, train_predictions,

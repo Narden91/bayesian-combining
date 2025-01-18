@@ -9,8 +9,7 @@ from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from xgboost import XGBClassifier
-
-import hyperparameters as hp
+from . import hyperparameters as hp
 
 
 def create_model(model_name: str, seed: int = 42):
