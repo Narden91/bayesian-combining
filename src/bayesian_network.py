@@ -194,14 +194,18 @@ def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
             # Verify model is still a DAG after adding target
             if not isinstance(model, BayesianNetwork):
                 raise ValueError("Invalid model structure after adding target node")
-
         else:
-            # Other algorithms (HillClimb, MMHC, etc.)
-            estimate_params = {
-                'scoring_method': scoring_method,
-                'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None
-            }
-            best_model_stck = bn_model.estimate(**estimate_params)
+            # Handle different algorithms
+            if cfg.bayesian_net.algorithm == 'Tree':
+                # TreeSearch doesn't accept scoring_method
+                best_model_stck = bn_model.estimate()
+            else:
+                # Other algorithms (HillClimb, MMHC, etc.)
+                estimate_params = {
+                    'scoring_method': scoring_method,
+                    'max_indegree': cfg.bayesian_net.max_parents if cfg.bayesian_net.use_parents else None
+                }
+                best_model_stck = bn_model.estimate(**estimate_params)
             model = BayesianNetwork(best_model_stck.edges())
 
         elapsed_time = time.time() - start_time
