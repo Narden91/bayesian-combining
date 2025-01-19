@@ -58,7 +58,7 @@ def main(cfg: DictConfig):
     logging.info(f"Analysis Type: {analysis_type}")
 
     try:
-        root_folder, output_folders = output_manager.setup_output_structure(
+        path_output_current_experiment, source_results_data_folders = output_manager.setup_output_structure(
             output_paths=output_paths,
             analysis_type=analysis_type,
             num_runs=num_runs
@@ -67,14 +67,14 @@ def main(cfg: DictConfig):
         logging.error(f"Error setting up output structure: {e}")
         raise
 
-    data_flag = utils.check_existing_data(output_folders)
+    data_flag = utils.check_existing_data(source_results_data_folders)
     read_data = False
 
     # Start time
     start_time = time.time()
 
     for run in range(num_runs):
-        run_folder = output_manager.create_run_folder(root_folder, run + 1)
+        run_folder = output_manager.create_run_folder(path_output_current_experiment, run + 1)
 
         seed = global_seed + run
         logging.info(f"-------------------Run {run + 1} | Seed: {seed}-------------------")
@@ -92,7 +92,8 @@ def main(cfg: DictConfig):
 
             if data_flag:
                 logging.info("Existing data found.") if verbose else None
-                train_preds, train_probs, test_preds, test_probs = utils.read_existing_data(run_folder)
+                train_preds, train_probs, test_preds, test_probs = utils.read_existing_data(source_results_data_folders,
+                                                                                            run + 1)
 
                 logging.info(f"Train predictions: \n {train_preds}") if verbose else None
                 logging.info(f"Train probabilities: \n {train_probs}") if verbose else None
@@ -114,14 +115,14 @@ def main(cfg: DictConfig):
                 (folder / f"run_{run + 1}" / "First_level_data" / "Trainings_data_proba.csv").exists() and
                 (folder / f"run_{run + 1}" / "First_level_data" / "Test_data.csv").exists() and
                 (folder / f"run_{run + 1}" / "First_level_data" / "Test_data_probabilities.csv").exists()
-                for folder in output_folders.values() if folder != output_folders.get("combined")
+                for folder in source_results_data_folders.values() if folder != source_results_data_folders.get("combined")
             )
 
             if all_data_exists:
                 logging.info("Existing data found for all datasets. Combining directly.") if verbose else None
                 try:
                     train_preds, train_probs, test_preds, test_probs = mp.combine_datasets(
-                        output_folders, run + 1, verbose
+                        source_results_data_folders, run + 1, verbose
                     )
                     if verbose:
                         logging.info(f"Combined train predictions: {train_preds}")
@@ -312,12 +313,12 @@ def main(cfg: DictConfig):
     output_manager.generate_final_analysis(target_node=cfg.data.target)
 
     # Calculate average metrics across all runs
-    average_metrics = utils.calculate_average_metrics(root_folder)
+    average_metrics = utils.calculate_average_metrics(path_output_current_experiment)
 
     if cfg.experiment.stacking_method == 'Bayesian':
-        df_occurrences = utils.calculate_markov_blanket_occurrences(root_folder, verbose)
+        df_occurrences = utils.calculate_markov_blanket_occurrences(path_output_current_experiment, verbose)
         if df_occurrences is not None:
-            utils.save_markov_blanket_occurrences_to_csv(df_occurrences, root_folder)
+            utils.save_markov_blanket_occurrences_to_csv(df_occurrences, path_output_current_experiment)
 
     if average_metrics:
         logging.info("Average metrics across all runs:") if debug else None
@@ -327,7 +328,7 @@ def main(cfg: DictConfig):
                 logging.info(f"  {metric}: {value:.5f}") if debug else None
 
         # Save average metrics to a CSV file
-        utils.save_average_metrics_to_csv(average_metrics, root_folder)
+        utils.save_average_metrics_to_csv(average_metrics, path_output_current_experiment)
     else:
         logging.warning("No metrics files found or processed.")
 
@@ -345,7 +346,7 @@ def main(cfg: DictConfig):
     logging.info(f"Elapsed time: {formatted_time} seconds")
 
     # save the time taken to run the experiment
-    time_file = root_folder / "Execution_time.txt"
+    time_file = path_output_current_experiment / "Execution_time.txt"
     with open(time_file, 'w') as f:
         f.write(f"Elapsed time: {formatted_time} seconds")
 

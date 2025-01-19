@@ -235,26 +235,67 @@ def merge_task_dataframes(df1: pd.DataFrame, df2: pd.DataFrame, id_column: str =
     return merged_df
 
 
-def read_existing_data(run_folder: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def read_existing_data(run_folders: Dict[str, Path], run_number: int) -> Tuple[
+    pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Read existing data from the specified run folder.
+    Read existing data from the specified run folders.
 
-    :param run_folder: Path to the run folder containing the data files.
-    :return: Tuple containing DataFrames for training predictions, training probabilities, test predictions, and test probabilities.
+    Args:
+        run_folders: Dictionary mapping dataset names to their run folder paths
+        run_number: Current run number
+
+    Returns:
+        Tuple containing DataFrames for training predictions, training probabilities,
+        test predictions, and test probabilities.
     """
     try:
-        # Read existing data
-        train_preds_path = run_folder / "First_level_data" / "Trainings_data.csv"
-        train_probs_path = run_folder / "First_level_data" / "Trainings_data_proba.csv"
-        test_preds_path = run_folder / "First_level_data" / "Test_data.csv"
-        test_probs_path = run_folder / "First_level_data" / "Test_data_probabilities.csv"
+        all_train_preds = []
+        all_train_probs = []
+        all_test_preds = []
+        all_test_probs = []
 
-        train_preds = pd.read_csv(train_preds_path)
-        train_probs = pd.read_csv(train_probs_path)
-        test_preds = pd.read_csv(test_preds_path)
-        test_probs = pd.read_csv(test_probs_path)
+        for dataset, folder_path in run_folders.items():
+            if dataset == "combined":
+                continue
 
-        return train_preds, train_probs, test_preds, test_probs
+            run_folder = folder_path / f"run_{run_number}"
+            logging.info(f"Reading data from {run_folder}")
+
+            # Read data for each dataset
+            train_preds_path = run_folder / "First_level_data" / "Trainings_data.csv"
+            train_probs_path = run_folder / "First_level_data" / "Trainings_data_proba.csv"
+            test_preds_path = run_folder / "First_level_data" / "Test_data.csv"
+            test_probs_path = run_folder / "First_level_data" / "Test_data_probabilities.csv"
+
+            # Read and add dataset prefix to column names
+            train_preds = pd.read_csv(train_preds_path)
+            train_probs = pd.read_csv(train_probs_path)
+            test_preds = pd.read_csv(test_preds_path)
+            test_probs = pd.read_csv(test_probs_path)
+
+            # Add dataset prefix to task columns
+            for df in [train_preds, train_probs, test_preds, test_probs]:
+                df.columns = [f"{dataset}_{col}" if col not in ['Id', 'Label'] else col
+                              for col in df.columns]
+
+            all_train_preds.append(train_preds)
+            all_train_probs.append(train_probs)
+            all_test_preds.append(test_preds)
+            all_test_probs.append(test_probs)
+
+        # Combine all datasets
+        combined_train_preds = pd.concat(all_train_preds, axis=1)
+        combined_train_probs = pd.concat(all_train_probs, axis=1)
+        combined_test_preds = pd.concat(all_test_preds, axis=1)
+        combined_test_probs = pd.concat(all_test_probs, axis=1)
+
+        # Remove duplicate columns
+        for df in [combined_train_preds, combined_train_probs,
+                   combined_test_preds, combined_test_probs]:
+            df = df.loc[:, ~df.columns.duplicated()]
+
+        return (combined_train_preds, combined_train_probs,
+                combined_test_preds, combined_test_probs)
 
     except FileNotFoundError as e:
         logging.error(f"Error reading existing data: {e}")

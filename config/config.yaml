@@ -54,37 +54,25 @@ experiment:
   stacking_method: Bayesian # Bayesian, Classification, MajorityVote, WeightedMajorityVote
   stacking_model: LogisticRegression # MLP, LogisticRegression
 
-#bayesian_net:
-#  algorithm: HillClimb  # HillClimb, MMHC, PC, Tree, GES
-#  score_metric: bic  # k2, bdeu, bds, bic, aic
-#  prior_type: K2  # K2 or BDeu or dirichlet
-#  use_parents: true
-#  max_parents: 3 # 5
-#  significance_level: 0.05  # for PC and MMHC
-#  ci_test: pearsonr  # for PC
-#  verbose: true
-
 bayesian_net:
-  algorithm: PC  # PC , HillClimb, GES, Tree
+  algorithm: HillClimb  # PC , HillClimb, GES, Tree
   score_metric: bic  # Scoring metric for final evaluation: k2, bdeu, bds, bic, aic
   prior_type: K2  # Prior type for parameter learning: K2 or BDeu
   use_parents: true
   max_parents: 3
 
   # PC-specific parameters
-  ci_test: pearsonr  # Options: pearsonr, chi_square, g_sq, fisher_exact
-  significance_level: 0.1  # Default: 0.05, Range: 0.01-0.1
-  max_cond_vars: 4  # Maximum size of conditioning set
-
-  # Additional PC settings
+  ci_test: mutual_info_test   # Options: pearsonr, chi_square, g_sq, fisher_exact
+  significance_level: 0.3  # Default: 0.05, Range: 0.01-0.1
+  max_cond_vars: 10  # Maximum size of conditioning set
   stable: true  # Use stable version of PC
-  complete_dag_search: false  # Whether to search complete DAG space
+  complete_dag_search: true  # Whether to search complete DAG space
 
   # Verbosity settings
   verbose: false
   show_progress: false
 
-  n_jobs: -1
+  n_jobs: 1
   cache_size: 1000
   early_stopping_steps: 5
   score_delta_threshold: 1e-4

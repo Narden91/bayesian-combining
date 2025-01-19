@@ -85,23 +85,26 @@ class OutputManager:
             raise
 
     def _get_root_folder(self, output_folders: Dict[str, Path]) -> Path:
-        """Determine the root output folder"""
+        """Determine the root output folder with consistent Bayesian naming."""
+        root_folder = None
+
         if len(output_folders) == 1:
-            return list(output_folders.values())[0]
+            root_folder = list(output_folders.values())[0]
         elif "combined" in output_folders:
             root_folder = output_folders["combined"]
-
-            # Handle Bayesian method folder renaming
-            if self.cfg.experiment.stacking_method == 'Bayesian':
-                if os.path.exists(root_folder):
-                    shutil.rmtree(root_folder)
-                root_folder = root_folder.with_name(
-                    f"{root_folder.name}_{self.cfg.bayesian_net.algorithm}_{self.cfg.bayesian_net.score_metric}_{self.cfg.bayesian_net.prior_type}"
-                )
-
-            return root_folder
         else:
             raise ValueError("Multiple output folders found but no combined folder.")
+
+        # Handle Bayesian method folder renaming for both combined and single dataset cases
+        if self.cfg.experiment.stacking_method == 'Bayesian':
+            if os.path.exists(root_folder) and "combined" in output_folders:
+                shutil.rmtree(root_folder)
+            root_folder = root_folder.with_name(
+                f"{root_folder.name}_{self.cfg.bayesian_net.algorithm}_"
+                f"{self.cfg.bayesian_net.score_metric}_{self.cfg.bayesian_net.prior_type}"
+            )
+
+        return root_folder
 
     def _setup_importance_tracking(self, config: ExperimentConfig) -> None:
         """
