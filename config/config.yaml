@@ -56,14 +56,14 @@ experiment:
 
 bayesian_net:
   algorithm: HillClimb  # PC , HillClimb, GES, Tree
-  score_metric: bic  # Scoring metric for final evaluation: k2, bdeu, bds, bic, aic
+  score_metric: k2  # Scoring metric for final evaluation: k2, bdeu, bds, bic, aic
   prior_type: K2  # Prior type for parameter learning: K2 or BDeu
-  use_parents: true
-  max_parents: 3
+  use_parents: true # Whether to use the provided max_parents parameter
+  max_parents: 3 # 5
 
   # PC-specific parameters
-  ci_test: mutual_info_test   # Options: pearsonr, chi_square, g_sq, fisher_exact
-  significance_level: 0.3  # Default: 0.05, Range: 0.01-0.1
+  ci_test: mutual_info_test   # Options: pearsonr, chi_square, g_sq, fisher_exact, mutual_info_test
+  significance_level: 0.3  # Default: 0.05
   max_cond_vars: 10  # Maximum size of conditioning set
   stable: true  # Use stable version of PC
   complete_dag_search: true  # Whether to search complete DAG space
