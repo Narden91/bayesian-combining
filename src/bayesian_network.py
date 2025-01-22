@@ -17,6 +17,7 @@ from pgmpy.metrics import log_likelihood_score
 from sklearn.metrics import mutual_info_score
 from tqdm import tqdm
 from .GES import FastGESEstimator
+from .vanilla_GES import VanillaGESEstimator
 
 
 def _initialize_structure_learner(cfg: Dict, data: pd.DataFrame) -> object:
@@ -35,7 +36,8 @@ def _initialize_structure_learner(cfg: Dict, data: pd.DataFrame) -> object:
         'MMHC': MmhcEstimator,
         'PC': PC,
         'Tree': TreeSearch,
-        'GES': FastGESEstimator
+        'GES': FastGESEstimator,
+        'VanillaGES': VanillaGESEstimator
     }
 
     if cfg.bayesian_net.algorithm not in algorithm_mapping:

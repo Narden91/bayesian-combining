@@ -55,7 +55,7 @@ experiment:
   stacking_model: LogisticRegression # MLP, LogisticRegression
 
 bayesian_net:
-  algorithm: HillClimb  # PC , HillClimb, GES, Tree
+  algorithm: VanillaGES  # PC , HillClimb, GES, Tree, VanillaGES
   score_metric: k2  # Scoring metric for final evaluation: k2, bdeu, bds, bic, aic
   prior_type: K2  # Prior type for parameter learning: K2 or BDeu
   use_parents: true # Whether to use the provided max_parents parameter
