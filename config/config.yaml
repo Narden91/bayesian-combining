@@ -14,7 +14,7 @@ hydra:
 
 settings:
   seed: 42
-  runs: 1
+  runs: 30
   verbose: False
   debug: False
   results_analysis: False
@@ -26,7 +26,7 @@ paths:
 
 data:
   #dataset: ['ConvNeXtSmall', 'EfficientNetV2S', 'InceptionResNetV2', 'InceptionV3', 'All', 'InAir', 'OnPaper', 'InAirOnPaper']
-  dataset: ['ConvNeXtSmall', 'InAir'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
+  dataset: ['ConvNeXtSmall'] # All, InAir, OnPaper, InAirOnPaper , ConvNeXtSmall, EfficientNetV2S, InceptionResNetV2
   extension: csv
   separator: ","
   target: Label
@@ -55,9 +55,9 @@ experiment:
   stacking_model: LogisticRegression # MLP, LogisticRegression
 
 bayesian_net:
-  algorithm: VanillaGES  # PC , HillClimb, GES, Tree, VanillaGES
+  algorithm: HillClimb  # PC , HillClimb, GES, Tree, VanillaGES
   score_metric: k2  # Scoring metric for final evaluation: k2, bdeu, bds, bic, aic
-  prior_type: K2  # Prior type for parameter learning: K2 or BDeu
+  prior_type: BDEu  # Prior type for parameter learning: K2 or BDeu
   use_parents: true # Whether to use the provided max_parents parameter
   max_parents: 3 # 5
 

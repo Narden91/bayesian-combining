@@ -101,7 +101,8 @@ class OutputManager:
                 shutil.rmtree(root_folder)
             root_folder = root_folder.with_name(
                 f"{root_folder.name}_{self.cfg.bayesian_net.algorithm}_"
-                f"{self.cfg.bayesian_net.score_metric}_{self.cfg.bayesian_net.prior_type}"
+                f"Prior_{self.cfg.bayesian_net.prior_type}_Score_{self.cfg.bayesian_net.score_metric}_"
+                f"Parent_{self.cfg.bayesian_net.use_parents}_{self.cfg.bayesian_net.max_parents}"
             )
 
         return root_folder
