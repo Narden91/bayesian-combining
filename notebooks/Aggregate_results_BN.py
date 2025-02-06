@@ -29,7 +29,11 @@ def process_metrics_files(root_directory):
                     # Fill all columns with None except first one with folder name
                     col: None for col in pd.read_csv(csv_path, nrows=0).columns
                 }])
-                separator_df.iloc[0, 0] = f"=== {relative_path} ==="
+
+                # Convert the path to string and replace underscores with spaces
+                relative_path_str = str(relative_path).replace('_', ' ')
+
+                separator_df.iloc[0, 0] = relative_path_str
 
                 # Read the CSV file
                 metrics_df = pd.read_csv(csv_path)
@@ -49,7 +53,7 @@ def process_metrics_files(root_directory):
 def main():
     try:
         # Get the current working directory or specify your root directory
-        root_dir = Path(r"")
+        root_dir = Path(r"C:\Users\Emanuele\Desktop\Risultati Iperparametrizzazione bayesian\Exp1\ConvNextSmall_XGB")
 
         # Process all files
         result_df = process_metrics_files(root_dir)

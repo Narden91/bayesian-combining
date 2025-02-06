@@ -129,6 +129,14 @@ def _ensure_target_node(model: BayesianNetwork, target: str, data: pd.DataFrame)
     return model
 
 
+def calculate_bn_metrics(model, data):
+    bic_score = BicScore(data).score(model)
+    k2_score = K2Score(data).score(model)
+    log_likelihood = log_likelihood_score(model, data)
+
+    return bic_score, k2_score, log_likelihood
+
+
 def optimize_dataset_for_pc(df: pd.DataFrame, target: str) -> pd.DataFrame:
     """
     Optimize dataset before PC algorithm application.
@@ -232,10 +240,12 @@ def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
         label_markov_blanket = model.get_markov_blanket(cfg.data.target)
         logging.info(f"Markov blanket size: {len(label_markov_blanket)}")
 
-        # Calculate network scores
-        bic_score = BicScore(df_predictions).score(model)
-        log_likelihood = log_likelihood_score(model, df_predictions[list(model.nodes())])
-        log_likelihood_test = log_likelihood_score(model, df_test[list(model.nodes())])
+        bic_score, k2_score, log_likelihood = calculate_bn_metrics(model, df_predictions)
+
+        # # Calculate network scores
+        # bic_score = BicScore(df_predictions).score(model)
+        # log_likelihood = log_likelihood_score(model, df_predictions[list(model.nodes())])
+        # log_likelihood_test = log_likelihood_score(model, df_test[list(model.nodes())])
 
         # Update importance tracker if provided
         if importance_tracker is not None:
@@ -284,7 +294,10 @@ def bayesian_network(cfg: Dict, run_number: int, run_folder: str,
         results_df_test[cfg.data.target] = results_df_test[cfg.data.target].map({0: -1, 1: 1})
 
         return (selected_columns, results_df_train, results_df_test,
-                bic_score, log_likelihood, log_likelihood_test)
+                bic_score, k2_score, log_likelihood)
+
+        # return (selected_columns, results_df_train, results_df_test,
+        #         bic_score, log_likelihood, log_likelihood_test)
 
     except Exception as e:
         logging.error(f"Error in bayesian_network: {str(e)}")

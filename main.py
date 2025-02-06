@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -182,7 +183,7 @@ def main(cfg: DictConfig):
 
         if cfg.experiment.stacking_method == 'Bayesian':
             (selected_columns, predictions_train, predictions_test, bic_score,
-             log_likelihood_train, log_likelihood_test) = bn.bayesian_network(
+             k2_score, log_likelihood) = bn.bayesian_network(
                 cfg, run, run_folder, stacking_trainings_data,
                 stacking_trainings_data_proba, stacking_test_data,
                 importance_tracker=output_manager.bayesian_tracker
@@ -203,7 +204,13 @@ def main(cfg: DictConfig):
             # Evaluate results on test data
             y_true_test = stacking_test_data[cfg.data.target]
             y_pred_test = predictions_test[cfg.data.target]
-            test_metrics_df = utils.compute_metrics(y_true_test, y_pred_test)
+            test_metrics_df = utils.compute_metrics(
+                y_true_test,
+                y_pred_test,
+                bic_score=bic_score,
+                k2_score=k2_score,
+                log_likelihood=log_likelihood
+            )
 
             # Save metrics to CSV
             filename_test = run_folder / f"bayesian_network_test_metrics_{run + 1}.csv"
@@ -352,4 +359,7 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    # Allow config override from command line
+    config_name = sys.argv[1] if len(sys.argv) > 1 else "config"
+    sys.argv = sys.argv[:1] + sys.argv[2:]
     main()

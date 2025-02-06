@@ -14,7 +14,7 @@ hydra:
 
 settings:
   seed: 42
-  runs: 30
+  runs: 2
   verbose: False
   debug: False
   results_analysis: False

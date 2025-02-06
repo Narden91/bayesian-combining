@@ -302,38 +302,40 @@ def read_existing_data(run_folders: Dict[str, Path], run_number: int) -> Tuple[
         return None, None, None, None
 
 
-def compute_metrics(y_true, y_pred) -> pd.DataFrame:
+def compute_metrics(y_true, y_pred, bic_score=None, k2_score=None, log_likelihood=None):
     """
-    Compute the confusion matrix, accuracy, precision, sensitivity, specificity, F1 score, and MCC.
-    Returns a pandas DataFrame with metrics as columns.
+    Compute the confusion matrix and other metrics.
+    Optionally include bic_score, k2_score, and log_likelihood if provided.
     """
     cm = confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = cm.ravel()
+    accuracy = accuracy_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred, zero_division=0)
+    sensitivity = recall_score(y_true, y_pred)
+    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
+    f1 = f1_score(y_true, y_pred)
 
-    accuracy = round(accuracy_score(y_true, y_pred), 5)
-    precision = round(precision_score(y_true, y_pred, zero_division=0), 5)
-    sensitivity = round(recall_score(y_true, y_pred, zero_division=0), 5)
-    f1 = round(f1_score(y_true, y_pred, zero_division=0), 5)
-    mcc = round(matthews_corrcoef(y_true, y_pred), 5)
-
-    # Specificity
-    specificity = round(tn / (tn + fp) if (tn + fp) > 0 else 0, 5)
-
-    # Compile metrics into a DataFrame
-    metrics_df = pd.DataFrame({
+    metrics_dict = {
         'Accuracy': [accuracy],
         'Precision': [precision],
         'Sensitivity': [sensitivity],
         'Specificity': [specificity],
         'F1_Score': [f1],
-        'MCC': [mcc],
+        'MCC': [matthews_corrcoef(y_true, y_pred)],
         'TN': [tn],
         'FP': [fp],
         'FN': [fn],
         'TP': [tp]
-    })
+    }
 
-    return metrics_df
+    if bic_score is not None:
+        metrics_dict['BIC_Score'] = [bic_score]
+    if k2_score is not None:
+        metrics_dict['K2_Score'] = [k2_score]
+    if log_likelihood is not None:
+        metrics_dict['Log_Likelihood'] = [log_likelihood]
+
+    return pd.DataFrame(metrics_dict)
 
 
 def save_metrics_to_csv(metrics: Union[pd.DataFrame, dict],
