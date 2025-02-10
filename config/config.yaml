@@ -14,7 +14,7 @@ hydra:
 
 settings:
   seed: 42
-  runs: 2
+  runs: 30
   verbose: False
   debug: False
   results_analysis: False
@@ -40,7 +40,7 @@ model:
   name: XGB # RandomForest, SVC, DecisionTree, XGB
 
 optuna:
-  n_trials: 2
+  n_trials: 25
 
 experiment:
   train_size: 0.7 # 0.5 for stacking Classification
@@ -57,7 +57,7 @@ experiment:
 bayesian_net:
   algorithm: HillClimb  # PC , HillClimb, GES, Tree, VanillaGES
   score_metric: k2  # Scoring metric for final evaluation: k2, bdeu, bds, bic, aic
-  prior_type: BDEu  # Prior type for parameter learning: K2 or BDeu
+  prior_type: K2  # Prior type for parameter learning: K2 or BDeu
   use_parents: true # Whether to use the provided max_parents parameter
   max_parents: 3 # 5
 

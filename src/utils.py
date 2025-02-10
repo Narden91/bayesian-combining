@@ -390,14 +390,16 @@ def save_metrics_to_csv(metrics: Union[pd.DataFrame, dict],
         raise
 
 
-def calculate_average_metrics(root_output_folder):
+def calculate_average_metrics(root_output_folder, method="Bayesian"):
     """
     Calculate the average metrics for each CSV file across all runs, excluding Markov_Blanket files.
     :param root_output_folder: Path object representing the root output folder.
+    :param method: The method used as stacking method for the experiment.
     :return: A dictionary with average metrics for each approach, including the number of runs.
     """
     # Define the metrics
-    required_metrics = ["Accuracy", "Precision", "Sensitivity", "Specificity", "F1_Score", "MCC"]
+    default_metrics = ["Accuracy", "Precision", "Sensitivity", "Specificity", "F1_Score", "MCC"]
+    bayesian_test_metrics = default_metrics + ["BIC_Score", "K2_Score", "Log_Likelihood"]
 
     # Define dictionaries to store the cumulative sums of metrics and counts of runs per approach
     approach_metrics = defaultdict(lambda: defaultdict(float))
@@ -414,6 +416,12 @@ def calculate_average_metrics(root_output_folder):
             # Extract the approach name
             approach = csv_file.stem.split('_metrics')[0]
 
+            # Determine which metrics to use
+            if method == "Bayesian" and "test" in csv_file.name.lower():
+                required_metrics = bayesian_test_metrics
+            else:
+                required_metrics = default_metrics
+
             for metric in required_metrics:
                 if metric in df.columns:
                     approach_metrics[approach][metric] += df[metric].mean()
@@ -426,6 +434,38 @@ def calculate_average_metrics(root_output_folder):
         average_metrics[approach]["Run_Executed"] = count
 
     return average_metrics
+
+
+def save_average_metrics(average_metrics, path_output_current_experiment, debug=False):
+    """
+    Logs and saves the average metrics to a CSV file.
+
+    :param average_metrics: Dictionary containing average metrics for each approach.
+    :param path_output_current_experiment: Path where the CSV file will be saved.
+    :param debug: Boolean flag to enable/disable logging.
+    """
+    if average_metrics:
+        logging.info("Average metrics across all runs:") if debug else None
+
+        # Prepare data for DataFrame
+        metrics_data = []
+        for approach, metrics in average_metrics.items():
+            logging.info(f"\n{approach.capitalize()} Approach:") if debug else None
+            row = {'Approach': approach.capitalize()}
+            for metric, value in metrics.items():
+                logging.info(f"  {metric}: {value:.5f}") if debug else None
+                row[metric] = value
+            metrics_data.append(row)
+
+        # Create DataFrame
+        df_metrics = pd.DataFrame(metrics_data)
+
+        # Save DataFrame to CSV
+        csv_path = path_output_current_experiment / "average_metrics.csv"
+        df_metrics.to_csv(csv_path, index=False)
+        logging.info(f"Average metrics saved to {csv_path}") if debug else None
+    else:
+        logging.warning("No metrics files found or processed.")
 
 
 def save_average_metrics_to_csv(average_metrics, root_output_folder):

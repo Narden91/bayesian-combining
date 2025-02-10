@@ -320,24 +320,17 @@ def main(cfg: DictConfig):
     output_manager.generate_final_analysis(target_node=cfg.data.target)
 
     # Calculate average metrics across all runs
-    average_metrics = utils.calculate_average_metrics(path_output_current_experiment)
+    average_metrics = utils.calculate_average_metrics(path_output_current_experiment,
+                                                      method=cfg.experiment.stacking_method)
+
+    logging.info(f"Average metrics: {average_metrics}")
 
     if cfg.experiment.stacking_method == 'Bayesian':
         df_occurrences = utils.calculate_markov_blanket_occurrences(path_output_current_experiment, verbose)
         if df_occurrences is not None:
             utils.save_markov_blanket_occurrences_to_csv(df_occurrences, path_output_current_experiment)
 
-    if average_metrics:
-        logging.info("Average metrics across all runs:") if debug else None
-        for approach, metrics in average_metrics.items():
-            logging.info(f"\n{approach.capitalize()} Approach:") if debug else None
-            for metric, value in metrics.items():
-                logging.info(f"  {metric}: {value:.5f}") if debug else None
-
-        # Save average metrics to a CSV file
-        utils.save_average_metrics_to_csv(average_metrics, path_output_current_experiment)
-    else:
-        logging.warning("No metrics files found or processed.")
+    utils.save_average_metrics(average_metrics, path_output_current_experiment, debug=debug)
 
     # End time
     end_time = time.time()
