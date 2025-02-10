@@ -130,9 +130,16 @@ def _ensure_target_node(model: BayesianNetwork, target: str, data: pd.DataFrame)
 
 
 def calculate_bn_metrics(model, data):
-    bic_score = BicScore(data).score(model)
-    k2_score = K2Score(data).score(model)
-    log_likelihood = log_likelihood_score(model, data)
+    # Ensure only the required columns are present
+    relevant_columns = [node for node in model.nodes() if node in data.columns]
+    filtered_data = data[relevant_columns].copy()
+
+    bic_score = BicScore(filtered_data).score(model)
+    k2_score = K2Score(filtered_data).score(model)
+    log_likelihood = log_likelihood_score(model, filtered_data)
+    # bic_score = BicScore(data).score(model)
+    # k2_score = K2Score(data).score(model)
+    # log_likelihood = log_likelihood_score(model, data)
 
     return bic_score, k2_score, log_likelihood
 
