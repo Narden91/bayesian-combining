@@ -172,5 +172,8 @@ poetry.toml
 data/*
 .idea/*
 output/*
+.claude/
+.github/
+prediction_data/
 
 ### Directories ###

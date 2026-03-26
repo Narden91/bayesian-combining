@@ -1,0 +1,18 @@
+# Neural network framework (MLP, GCN layers, BCELoss, Adam, DataLoader)
+torch>=2.5.1
+ 
+# Numerical computing
+numpy>=2.2.1
+ 
+# CSV loading
+pandas>=2.2.3
+ 
+# Welch t-test (ttest_ind_from_stats)
+scipy>=1.15.1
+ 
+# Classification metrics (accuracy, sensitivity, specificity, F1)
+scikit-learn>=1.6.1
+ 
+# BN structure learning — GTF script only
+# (HillClimbSearch, K2Score, BicScore, BayesianNetwork)
+pgmpy>=0.1.26
